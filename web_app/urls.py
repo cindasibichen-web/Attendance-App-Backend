@@ -1,0 +1,62 @@
+from django.urls import path
+from .views import *
+
+urlpatterns = [
+    
+path('adminprofile/', AdminProfileView.as_view(), name='admin-profile'),
+path('all-employee-list/',EmployeeListAPI.as_view(),name='all-employee-list'),
+path('add-project/',AddProjectApi.as_view(),name='add-project'),
+path('update-project/<int:pk>/',UpdateProjectApi.as_view(),name='update-project'),
+path("projectsdelete/<int:project_id>/", DeleteProjectApi.as_view(), name="delete-project"),
+path('list-all-projects/',ListProjectsApi.as_view(),name='list-all-projects'),
+path('list-all-tasks/',TaskListAPIView.as_view(),name='list-all-tasks'),
+path('projects-accept/', AcceptProjectAPIView.as_view(), name='projects-accept'),
+path('projects-reject/', RejectProjectAPIView.as_view(), name='projects-reject'),
+path('project-tasks-count/',ProjectTaskCountAPIView.as_view(),name='project-tasks-count'),
+path('employee-project-task-by-empid/<int:employee_id>/',EmployeeIdProjectsTasksAPIView.as_view(),name='employee-project-task-by-empid'),
+path('teamleaders/', TeamLeaderListAPIView.as_view(), name='teamleader-list'),
+path('projectmanager/', ProjectmanagerListAPIView.as_view(), name='projectmanager-list'),
+path('employee/', EmployeeListAPIView.as_view(), name='employee-list'),
+path('list-all-leaves/',LeaveListAPIView.as_view(),name='list-all-leaves'),
+path('leave-accept/', LeaveAcceptAPI.as_view(), name='leave-accept'),
+path('leave-reject/', LeaveRejectAPI.as_view(), name='leave-reject'),
+
+path("attendance-summary/", AttendanceSummaryView.as_view(), name="attendance-summary"),
+path("employeesadminview/", EmployeeListadminView.as_view(), name="employee-listadminview"),
+path('employee-designation-counts/',EmployeeCountByDesignation.as_view(),name='employee-designation-counts'),
+path('todays-employee-count-by-designation/',TodayEmployeeCountByDesignation.as_view(),name='todays-employee-count-by-designation'),
+path('todays-attendance-count/',TodaysAttendanceCount.as_view(),name='todays-attendance-count'),
+
+path("employeesfilter-by-designation/", EmployeeListAdminFilteredView.as_view(), name="employeesfilter-by-designation"),
+path('todays-all-employess-attendance/',AllTodaysEmployeeCheckinCheckOutDetails.as_view(),name='todays-all-employess-attendance'),
+path("employeesdetails/<int:employee_id>/", EmployeeAttendanceView.as_view(), name="employee-attendance"),
+path("attendanceedit/<int:pk>/", AttendanceEditView.as_view(), name="attendance-update"),
+path("holidayscreate/", HolidayCreateView.as_view(), name="holiday-create"),
+
+
+
+path('employee-remove/', RemoveEmployeeAPIView.as_view(), name='employee-remove'),
+path('employee-reactivate/', ReactivateEmployeeAPIView.as_view(), name='employee-reactivate'),
+
+path('inactive-employees-list/',InactiveEmployeeListAPIView.as_view(),name='inactive-employees-list'),
+path('active-employees-list/',ActiveEmployeeListAPIView.as_view(),name='active-employees-list'),
+
+
+path('create-department/', DepartmentCreateView.as_view(), name='create-department'),
+path('list-departments/',DepartmentListView.as_view(),name='list-departments'),
+path('create-designation/', DesignationCreateView.as_view(), name='create-designation'),
+path('list-designations/',DesignationListView.as_view(),name='list-designations'),
+path('notificationsuser/<int:user_id>/', NotificationLogByUserAPIView.as_view(), name='user-notifications'),
+path('update-notificationlog/<int:pk>/', NotificationLogEditAPIView.as_view(), name='update-notificationlog'),
+path('birthdaystoday/', TodayBirthdayAPIView.as_view(), name='birthdays-today'),
+path('birthdaystomorrow/', TomorrowBirthdayAPIView.as_view(), name='birthdays-tomorrow'),
+path('birthdaysupcoming/', UpcomingBirthdayAPIView.as_view(), name='birthdays-upcoming'),
+
+path('birthdaystodaywish/', TodayBirthdaywishAPIView.as_view(), name='birthdays-todaywish'),
+path('birthdaystodaywishid/<int:pk>/', TodayBirthdayWishidAPIView.as_view(), name='birthday-wish-by-id'),
+
+path('admin-notification-list/', AdminNotificationLogListAPIView.as_view(), name='admin-notification-list'),
+path('projectscount/', ProjectCountAPIView.as_view(), name='project-count'),
+path('taskcount/', TaskCountAPIView.as_view(), name='task-count'),
+
+]
