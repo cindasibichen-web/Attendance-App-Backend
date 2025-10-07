@@ -53,10 +53,12 @@ class AttendanceSummarySerializer(serializers.Serializer):
 class EmployeeListSerializerAdminView(serializers.ModelSerializer):
     email = serializers.EmailField(source="user.email", read_only=True)
     attendance_status = serializers.SerializerMethodField()
+    user_id = serializers.IntegerField(source="user.id", read_only=True)
    
     class Meta:
         model = EmployeeDetail
         fields = [
+            "user_id",
             "employee_id",
             "first_name",
             "last_name",

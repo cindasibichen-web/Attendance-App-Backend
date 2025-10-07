@@ -237,7 +237,7 @@ class TaskSerializer(serializers.ModelSerializer):
     id = serializers.IntegerField(required=False)
     class Meta:
         model = Task
-        fields = ["id","title", "description", "assigned_by", "assigned_to", "status"]
+        fields = ["id","title", "due_date","description", "assigned_by", "assigned_to", "status"]
 
 
 class TaskReadSerializer(serializers.ModelSerializer):
@@ -258,6 +258,7 @@ class TaskReadSerializer(serializers.ModelSerializer):
             "assigned_to_id",
             "assigned_to_name",
             "created_at",
+            "due_date",
             "updated_at",
         ]
 

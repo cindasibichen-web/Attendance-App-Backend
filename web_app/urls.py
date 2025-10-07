@@ -5,11 +5,15 @@ urlpatterns = [
     
 path('adminprofile/', AdminProfileView.as_view(), name='admin-profile'),
 path('all-employee-list/',EmployeeListAPI.as_view(),name='all-employee-list'),
+path('pending-approval-count/',DashboardPendingApprovalsCountView.as_view(),name='pending-approval-count'),
 path('add-project/',AddProjectApi.as_view(),name='add-project'),
 path('update-project/<int:pk>/',UpdateProjectApi.as_view(),name='update-project'),
 path("projectsdelete/<int:project_id>/", DeleteProjectApi.as_view(), name="delete-project"),
 path('list-all-projects/',ListProjectsApi.as_view(),name='list-all-projects'),
 path('list-all-tasks/',TaskListAPIView.as_view(),name='list-all-tasks'),
+path('add-tasks-to-project/',AddTasksToProjectApi.as_view(),name='add-tasks-to-project'),
+path('update-task/<int:task_id>/',EditTaskApi.as_view(),name='update-task'),
+path('delete-task/<int:task_id>/',DeleteTaskApi.as_view(),name='delete-task'),
 path('projects-accept/', AcceptProjectAPIView.as_view(), name='projects-accept'),
 path('projects-reject/', RejectProjectAPIView.as_view(), name='projects-reject'),
 path('project-tasks-count/',ProjectTaskCountAPIView.as_view(),name='project-tasks-count'),
@@ -58,5 +62,8 @@ path('birthdaystodaywishid/<int:pk>/', TodayBirthdayWishidAPIView.as_view(), nam
 path('admin-notification-list/', AdminNotificationLogListAPIView.as_view(), name='admin-notification-list'),
 path('projectscount/', ProjectCountAPIView.as_view(), name='project-count'),
 path('taskcount/', TaskCountAPIView.as_view(), name='task-count'),
+
+path('taskslast-7-days/', Last7DaysTasksAPIView.as_view(), name='tasks-last-7-days'),
+path("taskliststatusfilter/<str:status_filter>/", TaskStatusFilterAPIView.as_view(), name="task-status-filter"),
 
 ]
