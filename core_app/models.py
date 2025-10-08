@@ -242,6 +242,9 @@ class Project(models.Model):
     attachment = models.FileField(upload_to="Project_attachment/")
     status = models.CharField(max_length = 100 , default='Pending')
     reason_for_rejection = models.TextField(null=True,blank=True)
+    created_at = models.DateTimeField(auto_now_add=True,null=True)
+    updated_at = models.DateTimeField(auto_now=True,null=True)
+    assigned_by = models.ForeignKey(User, on_delete=models.SET_NULL, null=True, related_name="projects_assigned")
 
     def __str__(self):
         return self.project_name
@@ -330,3 +333,22 @@ class Designation(models.Model):
 
     def __str__(self):
         return self.title    
+    
+
+  # new branch table  
+class Branch(models.Model):
+    name = models.CharField(max_length=100)
+    location = models.CharField(max_length=255)
+    google_map_link = models.URLField(max_length=500, blank=True, null=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+    address = models.TextField(null=True,blank=True)
+    status = models.CharField(max_length=20, default="Active")  # Active / Inactive
+    starting_time = models.TimeField(null=True,blank=True)
+    closing_time = models.TimeField(null=True,blank=True)
+    phone = models.CharField(max_length=20, blank=True, null=True)
+    email = models.EmailField(blank=True, null=True)
+    company_id = models.CharField(max_length=100, blank=True, null=True)
+
+    def __str__(self):
+        return self.name  

@@ -174,13 +174,13 @@ class RefreshTokenView(APIView):
                 {
                     "success": True,
                     "message": "Token refreshed successfully",
-                    "access": str(new_refresh.access_token),
-                    "refresh": str(new_refresh),
-                    "user": {
-                        "id": user.id,
-                        "email": user.email,
-                        "role": user.role,
-                    },
+                    # "access": str(new_refresh.access_token),
+                    # "refresh": str(new_refresh),
+                    # "user": {
+                    #     "id": user.id,
+                    #     "email": user.email,
+                    #     "role": user.role,
+                    # },
                 },
                 status=status.HTTP_200_OK,
             )
@@ -818,6 +818,26 @@ class FaceVerifyView(APIView):
             }, status=401)
         # ✅ Check for active punch-in
         today = timezone.now().date()
+
+        approved_leave = Leave.objects.filter(
+        employee=employee,
+        start_date__lte=today,
+        end_date__gte=today,
+        status="Approved"
+          ).first()
+
+        if approved_leave:
+        # ✅ If employee punches in, mark the leave as not taken
+         approved_leave.status = "Not Taken"
+         approved_leave.save()
+
+         # (Optional) Log or notify
+         NotificationLog.objects.create(
+             user=user,
+             action=f"Leave on {today} marked as 'Not Taken' due to punch-in.",
+             title="Leave Updated"
+         )
+        
         active_punch_in = Attendance.objects.filter(
             employee=employee,
             date=today,
@@ -1127,6 +1147,26 @@ def punch_in_view(request):
         return JsonResponse({"status": "failed", "message": "Location mismatch!"}, status=400)
 
     today = timezone.now().date()
+
+     # ✅ Check if employee has approved leave for today
+    approved_leave = Leave.objects.filter(
+        employee=employee,
+        start_date__lte=today,
+        end_date__gte=today,
+        status="Approved"
+    ).first()
+
+    if approved_leave:
+        # ✅ If employee punches in, mark the leave as not taken
+        approved_leave.status = "Not Taken"
+        approved_leave.save()
+
+        # (Optional) Log or notify
+        NotificationLog.objects.create(
+            user=user,
+            action=f"Leave on {today} marked as 'Not Taken' due to punch-in.",
+            title="Leave Updated"
+        )
 
     # Check for active punch-in
     active_punch_in = Attendance.objects.filter(
@@ -1814,10 +1854,22 @@ class AttendanceReportView(APIView):
             ).first()
 
             if leave:
-                if leave.status.lower() == "approved":
+                leave_status = leave.status.lower()
+                if leave_status == "approved":
                     status = "leave"
-                elif leave.status.lower() == "rejected":
+                elif leave_status == "rejected":
                     status = "absent"
+                elif leave_status == "not taken":
+                    # ✅ Treat as working day — check punch-in time
+                    if first_in:
+                        local_first_in = timezone.localtime(first_in)
+                        threshold = time(9, 40)
+                        if local_first_in.time() <= threshold:
+                            status = "present"
+                        else:
+                            status = "late"
+                    else:
+                        status = "absent"  # If no attendance record at all
 
             year = date.year
             month = date.month

@@ -54,6 +54,7 @@ class EmployeeListSerializerAdminView(serializers.ModelSerializer):
     email = serializers.EmailField(source="user.email", read_only=True)
     attendance_status = serializers.SerializerMethodField()
     user_id = serializers.IntegerField(source="user.id", read_only=True)
+    joiningYear = serializers.SerializerMethodField()
    
     class Meta:
         model = EmployeeDetail
@@ -67,6 +68,8 @@ class EmployeeListSerializerAdminView(serializers.ModelSerializer):
             "designation",
             "department",
             "attendance_status",
+            "profile_pic",
+            "joiningYear",
            
         ]
 
@@ -81,7 +84,16 @@ class EmployeeListSerializerAdminView(serializers.ModelSerializer):
         return True
 
     def get_message(self, obj):
-        return "Data fetched successfully"    
+        return "Data fetched successfully"   
+    def get_joiningYear(self, obj):
+        """Return the joining year as an integer (e.g. 2023) or None if unavailable."""
+        created = getattr(obj, "created_at", None)
+        if created:
+            try:
+                return created.year
+            except Exception:
+                return None
+        return None
 
 # tasks list serializer 
 class ProjectMembersSerializer(serializers.ModelSerializer):
@@ -312,3 +324,11 @@ class AttendanceEditSerializer(serializers.ModelSerializer):
             data["out_time"] = None
 
         return data    
+    
+
+# branch serializer
+class BranchSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = Branch
+        fields = '__all__'
+        # fields = ['id', 'name', 'location', 'description']    

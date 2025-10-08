@@ -26,7 +26,7 @@ ALLOWED_HOSTS = [
     'localhost',
     '127.0.0.1',
     # '192.168.1.9',   # 👈 your system’s LAN IP
-    '192.168.1.7'
+    '192.168.1.3'
 ]
 # Application definition
 INSTALLED_APPS = [
@@ -143,7 +143,7 @@ REST_FRAMEWORK = {
 
 # JWT Settings
 SIMPLE_JWT = {
-    'ACCESS_TOKEN_LIFETIME': timedelta(minutes=30),
+    'ACCESS_TOKEN_LIFETIME': timedelta(minutes=1),
     'REFRESH_TOKEN_LIFETIME': timedelta(days=1),
     'ROTATE_REFRESH_TOKENS': True,
     'BLACKLIST_AFTER_ROTATION': True,

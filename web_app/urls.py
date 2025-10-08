@@ -6,6 +6,7 @@ urlpatterns = [
 path('adminprofile/', AdminProfileView.as_view(), name='admin-profile'),
 path('all-employee-list/',EmployeeListAPI.as_view(),name='all-employee-list'),
 path('pending-approval-count/',DashboardPendingApprovalsCountView.as_view(),name='pending-approval-count'),
+path('taskpercentage/', TaskPercentageAPIView.as_view(), name='task-percentage'),
 path('add-project/',AddProjectApi.as_view(),name='add-project'),
 path('update-project/<int:pk>/',UpdateProjectApi.as_view(),name='update-project'),
 path("projectsdelete/<int:project_id>/", DeleteProjectApi.as_view(), name="delete-project"),
@@ -65,5 +66,8 @@ path('taskcount/', TaskCountAPIView.as_view(), name='task-count'),
 
 path('taskslast-7-days/', Last7DaysTasksAPIView.as_view(), name='tasks-last-7-days'),
 path("taskliststatusfilter/<str:status_filter>/", TaskStatusFilterAPIView.as_view(), name="task-status-filter"),
+path('create-list-branch/', BranchCreateListView.as_view(), name='create-list-branch'),
+
+path("employeesactivity/", EmployeeActivityListAPIView.as_view(), name="employeeActivity-list"),
 
 ]
