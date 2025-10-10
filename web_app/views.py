@@ -37,7 +37,7 @@ from django.utils.timezone import now
 from django.db.models import Min, Max
 from rest_framework_simplejwt.token_blacklist.models import BlacklistedToken, OutstandingToken
 from rest_framework import generics   
-
+from drf_spectacular.utils import extend_schema
 
 
 
@@ -280,8 +280,138 @@ class ListProjectsApi(APIView):
             "projects": serializer.data
         }, status=status.HTTP_200_OK)
 
+# project details by project id
+class ProjectDetailByIDAPIView(APIView):
+    permission_classes = [IsAuthenticated]
+
+    def get(self, request, project_id):
+        project = get_object_or_404(Project, id=project_id)
+        serializer = ProjectReadSerializer(project)
+        return Response({
+            "success": True,
+            "message": "Project details retrieved successfully",
+            "data": serializer.data
+        })
 
 
+# add  , list  project images to the project
+class ProjectImageUploadApi(APIView):
+    permission_classes = [IsAuthenticated]
+    parser_classes = (MultiPartParser, FormParser)
+
+    def post(self, request, *args, **kwargs):
+        serializer = ProjectImageSerializer(data=request.data)
+        if serializer.is_valid():
+            serializer.save()
+            return Response({
+                "success": True,
+                "message": "Project image uploaded successfully",
+                "data": serializer.data
+            }, status=status.HTTP_201_CREATED)
+        return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+    
+    def get(self, request, project_id, *args, **kwargs):
+        images = ProjectImages.objects.filter(project__id=project_id)
+        serializer = ProjectImageSerializer(images, many=True)
+        return Response({
+            "success": True,
+            "message": f"Images for project ID {project_id} fetched successfully",
+            "data": serializer.data
+        }, status=status.HTTP_200_OK)
+    
+
+# image patch delete api 
+class ProjectImageDeleteUpdateApi(APIView):
+    permission_classes = [IsAuthenticated]
+    parser_classes = (MultiPartParser, FormParser)
+    def patch(self, request, image_id, *args, **kwargs):
+        image = get_object_or_404(ProjectImages, id=image_id)
+        serializer = ProjectImageSerializer(image, data=request.data, partial=True)
+        if serializer.is_valid():
+            serializer.save()
+            return Response({
+                "success": True,
+                "message": "Project image updated successfully",
+                "data": serializer.data
+            }, status=status.HTTP_200_OK)
+        return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+    def delete(self, request, image_id, *args, **kwargs):
+        image = get_object_or_404(ProjectImages, id=image_id)
+        image.delete()
+        return Response({
+            "success": True,
+            "message": f"Project image with ID {image_id} deleted successfully"
+        }, status=status.HTTP_200_OK)
+
+
+class ProjectFileListCreateAPIView(generics.ListCreateAPIView):
+    queryset = ProjectFile.objects.all().select_related('project')
+    serializer_class = ProjectFileSerializer
+    permission_classes = [IsAuthenticated]    
+    
+    
+    
+# project id wise get files     
+class ProjectFileRetrieveAPIView(generics.ListAPIView):
+    serializer_class = ProjectFileSerializer
+    permission_classes = [IsAuthenticated]
+
+    def get_queryset(self):
+        project_id = self.kwargs['project_id']
+        return ProjectFile.objects.filter(project__id=project_id).select_related('project')
+
+    def list(self, request, *args, **kwargs):
+        queryset = self.get_queryset()
+        if queryset.exists():
+            serializer = self.get_serializer(queryset, many=True)
+            return Response({
+                "success": True,
+                "data": serializer.data
+            })
+        else:
+            return Response({
+                "success": False,
+                "message": "No files found"
+            })
+            
+            
+            
+            
+            
+class ProjectFileUpdateAPIView(generics.UpdateAPIView):
+    queryset = ProjectFile.objects.all()
+    serializer_class = ProjectFileSerializer
+    permission_classes = [IsAuthenticated]
+    lookup_field = 'id'
+
+    def update(self, request, *args, **kwargs):
+        instance = self.get_object()
+        serializer = self.get_serializer(instance, data=request.data, partial=True)  # Allow partial update
+        serializer.is_valid(raise_exception=True)
+        self.perform_update(serializer)
+        return Response({
+            "success": True,
+            "message": "File updated successfully",
+            "data": serializer.data
+        })            
+ 
+
+
+class ProjectFileDeleteAPIView(generics.DestroyAPIView):
+    queryset = ProjectFile.objects.all()
+    serializer_class = ProjectFileSerializer
+    permission_classes = [IsAuthenticated]
+    lookup_field = 'id'  # Delete by ID from URL
+
+    def destroy(self, request, *args, **kwargs):
+        instance = self.get_object()  # Get the object to delete
+        self.perform_destroy(instance)  # Delete it
+        return Response(
+            {"success": True, "message": "Deleted successfully"},
+            status=status.HTTP_200_OK
+        )
+
+    
 # add extra tasks to existing project
 class AddTasksToProjectApi(APIView):
     permission_classes = [IsAuthenticated]
@@ -883,47 +1013,50 @@ class TodayEmployeeCountByDesignation(APIView):
         })
 
 
-# todays attendance count 
+# todays attendance count  all employees
 class TodaysAttendanceCount(APIView):
     permission_classes = [IsAuthenticated]
 
     def get(self, request):
-        user = request.user
-        employee = user.employee_profile
-        today = date.today()
+        today = timezone.localdate()
 
-        
-        attendances = Attendance.objects.filter(employee=employee, date=today, status="Present")
+        # Get each employee's first punch-in record for today
+        first_punches = (
+            Attendance.objects.filter(date=today)
+            .values("employee")
+            .annotate(first_in=Min("in_time"))
+        )
 
         present_count = 0
         late_count = 0
-        for att in attendances:
-            if att.in_time:
-                punch_time = att.in_time.time()
+
+        for record in first_punches:
+            first_in = record["first_in"]
+            if first_in:
+                # Convert to local time if timezone-aware
+                local_in_time = timezone.localtime(first_in)
+                punch_time = local_in_time.time()
+
+                # ✅ Compare correctly
                 if punch_time <= time(9, 40):
                     present_count += 1
                 else:
                     late_count += 1
 
-       
+        # Leave count (unique employees on leave today)
         leave_count = Leave.objects.filter(
-            employee=employee,
             start_date__lte=today,
             end_date__gte=today,
             status="Approved"
-        ).count()
+        ).values("employee").distinct().count()
 
         return Response({
             "success": True,
             "date": today,
-            "presence_count": present_count,
+            "present_count": present_count,
             "late_count": late_count,
             "leave_count": leave_count
         })
-
-
-
-
 
 # ADMIN Filter employee designation wise list       
 class EmployeeListAdminFilteredView(APIView):
@@ -1035,7 +1168,7 @@ class AllTodaysEmployeeCheckinCheckOutDetails(APIView):
         })
 
 
-# empployee attendance by id 
+# empployee all attendance details by emp id 
 class EmployeeAttendanceView(APIView):
     permission_classes = [IsAuthenticated]
 
@@ -1046,6 +1179,110 @@ class EmployeeAttendanceView(APIView):
             "status": True,
             "data": serializer.data
         })
+    
+
+# filter employee attendance by status present , absent , late 
+class EmployeeAttendanceFilterByStatusView(APIView):
+    permission_classes = [IsAuthenticated]
+
+    def get(self, request, employee_id):
+        status = request.query_params.get("status")
+        status = status.strip().title()
+
+        if status not in ["Present", "Absent", "Late"]:
+            return Response({
+                "status": False,
+                "message": "Invalid status. Must be 'Present', 'Absent', or 'Late'."
+            }, status=400)
+
+        # Get the employee
+        employee = get_object_or_404(EmployeeDetail, id=employee_id)
+
+        # Filter employee's attendance by status
+        latest_status = (
+            Attendance.objects.filter(employee=employee, date=OuterRef("date"))
+            .order_by("-out_time")
+            .values("status")[:1]
+        )
+
+        qs = (
+            Attendance.objects.filter(employee=employee, status=status)
+            .values("date")
+            .annotate(
+                in_time=Min("in_time"),
+                out_time=Max("out_time"),
+                status=Subquery(latest_status),
+            )
+            .order_by("-date")
+        )
+
+        # Serialize the grouped daily data
+        daily_data = DailyAttendanceSerializer(qs, many=True).data
+
+        # Include employee info
+        employee_data = {
+            "id": employee.id,
+            "first_name": employee.first_name,
+            "last_name": employee.last_name,
+            "profile_pic": employee.profile_pic.url if employee.profile_pic else None,
+            "employee_id": employee.employee_id,
+            "attendances": daily_data,
+        }
+
+        return Response({
+            "status": True,
+            "message": f"Attendance with status '{status}' fetched successfully",
+            "data": employee_data,
+        })
+
+# past 7 days attendance details
+class EmployeeAttendanceViewpast7days(APIView):
+    permission_classes = [IsAuthenticated]
+
+    def get(self, request, employee_id):
+        employee = get_object_or_404(EmployeeDetail, id=employee_id)
+        serializer = EmployeeAttendanceSerializerpast7days(employee)
+        return Response({
+            "status": True,
+            "data": serializer.data
+        })
+
+# list employee attendence details by date range
+class AttendanceByDateRangeView(APIView):
+    permission_classes = [IsAuthenticated]
+
+    def get(self, request):
+        employee_id = request.query_params.get("employee_id")
+        start_date = request.query_params.get("start_date")
+        end_date = request.query_params.get("end_date")
+
+        if not employee_id or not start_date or not end_date:
+            return Response({
+                "status": False,
+                "message": "employee_id, start_date, and end_date are required"
+            }, status=400)
+
+        try:
+            employee = EmployeeDetail.objects.get(id=employee_id)
+        except EmployeeDetail.DoesNotExist:
+            return Response({
+                "status": False,
+                "message": "Employee not found"
+            }, status=404)
+
+        attendances = Attendance.objects.filter(
+            employee=employee,
+            date__range=[start_date, end_date]
+        ).order_by("-date")
+
+        serializer = AttendanceSerializer(attendances, many=True)
+        return Response({
+            "status": True,
+            "message": f"Attendance records for {employee.first_name} from {start_date} to {end_date}",
+            "data": serializer.data
+        })
+
+
 
 #employee attendence details edit by admin        
 class AttendanceEditView(APIView):
@@ -1852,4 +2089,133 @@ class EmployeeActivityListAPIView(APIView):
             "success": True,
             "count": len(employee_activities),
             "activities": employee_activities
+        })
+
+#  last 7 days activity list api
+class Last7DaysActivityListAPIView(APIView):
+    permission_classes = [IsAuthenticated]
+
+    def get(self, request):
+        seven_days_ago = timezone.now() - timedelta(days=7)
+        IST = pytz.timezone("Asia/Kolkata")
+
+        activities = []
+
+        # --- Employee leaves in last 7 days ---
+        leaves = Leave.objects.filter(created_at__gte=seven_days_ago).select_related('employee')
+        for leave in leaves:
+            activity_time = timezone.localtime(leave.created_at, IST)
+            activities.append({
+                "type": "Employee",
+                "id": leave.employee.id,
+                "employee_id": leave.employee.employee_id,
+                "first_name": leave.employee.first_name,
+                "last_name": leave.employee.last_name,
+                "designation": leave.employee.designation,
+                "activity_type": f"Leave Applied ({leave.status})",
+                "activity_time": activity_time.strftime("%Y-%m-%d %H:%M:%S %Z")
+            })
+
+        # --- New employees added in last 7 days ---
+        new_employees = EmployeeDetail.objects.filter(created_at__gte=seven_days_ago)
+        for emp in new_employees:
+            activity_time = timezone.localtime(emp.created_at, IST)
+            activities.append({
+                "type": "Employee",
+                "id": emp.id,
+                "employee_id": emp.employee_id,
+                "first_name": emp.first_name,
+                "last_name": emp.last_name,
+                "designation": emp.designation,
+                "activity_type": "New Employee Added",
+                "activity_time": activity_time.strftime("%Y-%m-%d %H:%M:%S %Z")
+            })
+
+        # --- Employees removed in last 7 days ---
+        removed_employees = EmployeeDetail.objects.filter(
+            user__is_active=False,
+            updated_at__gte=seven_days_ago
+        )
+        for emp in removed_employees:
+            activity_time = timezone.localtime(emp.updated_at, IST)
+            activities.append({
+                "type": "Employee",
+                "id": emp.id,
+                "employee_id": emp.employee_id,
+                "first_name": emp.first_name,
+                "last_name": emp.last_name,
+                "designation": emp.designation,
+                "activity_type": "Employee Deleted",
+                "activity_time": activity_time.strftime("%Y-%m-%d %H:%M:%S %Z")
+            })
+
+        # --- New projects added in last 7 days ---
+        new_projects = Project.objects.filter(created_at__gte=seven_days_ago)
+        for proj in new_projects:
+            activity_time = timezone.localtime(proj.created_at, IST)
+            activities.append({
+                "type": "Project",
+                "id": proj.id,
+                "project_name": proj.project_name,
+                "client": proj.client,
+                "assigned_by": proj.assigned_by.first_name if proj.assigned_by else None,
+                "priority": proj.priority,  
+                "status": proj.status,
+                "activity_type": "New Project Added",
+                "activity_time": activity_time.strftime("%Y-%m-%d %H:%M:%S %Z")
+            })
+        # --- Projects updated in last 7 days ---
+        updated_projects = Project.objects.filter(
+            updated_at__gte=seven_days_ago
+        ).exclude(created_at__gte=seven_days_ago)  # exclude those already counted as new
+        for proj in updated_projects:
+            activity_time = timezone.localtime(proj.updated_at, IST)
+            activities.append({
+                "type": "Project",
+                "id": proj.id,
+                "project_name": proj.project_name,
+                "client": proj.client,
+                "assigned_by": proj.assigned_by
+                .first_name if proj.assigned_by else None,
+                "priority": proj.priority,
+                "status": proj.status,
+                "activity_type": "Project Updated",
+                "activity_time": activity_time.strftime("%Y-%m-%d %H:%M:%S %Z")
+            })
+        # --- New tasks added in last 7 days ---
+        new_tasks = Task.objects.filter(created_at__gte=seven_days_ago) 
+        for task in new_tasks:
+            activity_time = timezone.localtime(task.created_at, IST)
+            activities.append({
+                "type": "Task",
+                "id": task.id,
+                "title": task.title,
+                "description": task.description,
+                "project_name": task.project.project_name if task.project else None,
+                "assigned_by": task.assigned_by.first_name if task.assigned_by else None,
+                "assigned_to": task.assigned_to.first_name if task.assigned_to else None,
+                "status": task.status,
+                "activity_type": "New Task Created",
+                "activity_time": activity_time.strftime("%Y-%m-%d %H:%M:%S %Z")
+            })
+        # --- Attendance updated in last 7 days ---
+        attendances = Attendance.objects.filter(updated_at__gte=seven_days_ago).select_related('employee')
+        for att in attendances:
+            emp = att.employee
+            activity_time = timezone.localtime(att.updated_at, IST)
+            activities.append({
+                "type": "Attendance",
+                "id": att.id,
+                "employee_id": emp.employee_id,
+                "first_name": emp.first_name,
+                "last_name": emp.last_name,
+                "activity_type": "Attendance Updated",
+                "activity_time": activity_time.strftime("%Y-%m-%d %H:%M:%S %Z")
+            })
+        # --- Sort by latest activity time ---
+        activities.sort(key=lambda x: x['activity_time'], reverse=True)
+        return Response({
+            "success": True,
+            "count": len(activities),
+            "activities": activities
         })

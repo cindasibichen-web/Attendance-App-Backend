@@ -26,7 +26,7 @@ ALLOWED_HOSTS = [
     'localhost',
     '127.0.0.1',
     # '192.168.1.9',   # 👈 your system’s LAN IP
-    '192.168.1.3'
+    '192.168.1.4'
 ]
 # Application definition
 INSTALLED_APPS = [
@@ -139,14 +139,15 @@ REST_FRAMEWORK = {
     'DEFAULT_PERMISSION_CLASSES': (
         'rest_framework.permissions.IsAuthenticated',
     ),
+      'DEFAULT_SCHEMA_CLASS': 'drf_spectacular.openapi.AutoSchema',
 }
 
 # JWT Settings
 SIMPLE_JWT = {
-    'ACCESS_TOKEN_LIFETIME': timedelta(minutes=1),
+    'ACCESS_TOKEN_LIFETIME': timedelta(minutes=5),
     'REFRESH_TOKEN_LIFETIME': timedelta(days=1),
     'ROTATE_REFRESH_TOKENS': True,
-    'BLACKLIST_AFTER_ROTATION': True,
+    'BLACKLIST_AFTER_ROTATION': True,                      
 }
 
 # Celery configuration
@@ -161,5 +162,4 @@ DEFAULT_AUTO_FIELD = 'django.db.models.BigAutoField'
 
 
 CORS_ALLOW_ALL_ORIGINS = True
-
 

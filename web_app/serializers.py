@@ -2,6 +2,7 @@ from rest_framework import serializers
 from core_app.models import *
 from django.db.models import Min, Max,OuterRef,Subquery
 import pytz
+from datetime import date, timedelta 
 
 
 
@@ -59,6 +60,7 @@ class EmployeeListSerializerAdminView(serializers.ModelSerializer):
     class Meta:
         model = EmployeeDetail
         fields = [
+            "id",
             "user_id",
             "employee_id",
             "first_name",
@@ -131,6 +133,11 @@ class TaskWithMembersSerializer(serializers.ModelSerializer):
         if obj.updated_at:
             return obj.updated_at.astimezone().strftime("%Y-%m-%d %H:%M:%S")
         return None
+
+
+
+
+
 
 
 # employee attendance details by id
@@ -324,7 +331,53 @@ class AttendanceEditSerializer(serializers.ModelSerializer):
             data["out_time"] = None
 
         return data    
-    
+
+
+
+      
+class EmployeeAttendanceSerializerpast7days(serializers.ModelSerializer):
+    attendances = serializers.SerializerMethodField()
+
+    class Meta:
+        model = EmployeeDetail
+        fields = ["id", "first_name", "last_name", "profile_pic", "employee_id", "attendances"]
+
+    def get_attendances(self, obj):
+        today = date.today()
+        last_7_days = today - timedelta(days=7)
+
+        # Filter attendance only for the past 7 days (including today)
+        attendance_qs = Attendance.objects.filter(
+            employee=obj,
+            date__range=[last_7_days, today]
+        )
+
+        # Subqueries for latest status and ID of the day's last record
+        latest_status = (
+            Attendance.objects.filter(employee=obj, date=OuterRef("date"))
+            .order_by("-out_time")
+            .values("status")[:1]
+        )
+        latest_attendance_id = (
+            Attendance.objects.filter(employee=obj, date=OuterRef("date"))
+            .order_by("-out_time")
+            .values("id")[:1]
+        )
+
+        # Annotate daily summary
+        qs = (
+            attendance_qs
+            .values("date")
+            .annotate(
+                id=Subquery(latest_attendance_id),
+                in_time=Min("in_time"),
+                out_time=Max("out_time"),
+                status=Subquery(latest_status),
+            )
+            .order_by("-date")
+        )
+
+        return DailyAttendanceSerializer(qs, many=True).data
 
 # branch serializer
 class BranchSerializer(serializers.ModelSerializer):

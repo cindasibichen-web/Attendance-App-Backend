@@ -76,12 +76,34 @@ class User(AbstractBaseUser, PermissionsMixin):
     def __str__(self):
         return f"{self.email} ({self.role})"
     
+
+
+  # new branch table  
+class Branch(models.Model):
+    name = models.CharField(max_length=100)
+    location = models.CharField(max_length=255)
+    google_map_link = models.URLField(max_length=500, blank=True, null=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+    address = models.TextField(null=True,blank=True)
+    status = models.CharField(max_length=20, default="Active")  # Active / Inactive
+    starting_time = models.TimeField(null=True,blank=True)
+    closing_time = models.TimeField(null=True,blank=True)
+    phone = models.CharField(max_length=20, blank=True, null=True)
+    email = models.EmailField(blank=True, null=True)
+    company_id = models.CharField(max_length=100, blank=True, null=True)
+
+    def __str__(self):
+        return self.name  
     
+
+
 # ---------------------------
 # Employee Detail
 # ---------------------------
 class EmployeeDetail(models.Model):
     user = models.OneToOneField(User, on_delete=models.CASCADE, related_name="employee_profile")
+    branch_name = models.ForeignKey(Branch, on_delete=models.SET_NULL, null=True, blank=True)
     first_name = models.CharField(max_length=100)
     last_name = models.CharField(max_length=100)
     employee_id = models.CharField(max_length=50, unique=True, db_index=True)
@@ -226,6 +248,9 @@ class Holiday(models.Model):
             self.type = 'Company Holiday' if self.added_by else 'Public Holiday'
         super().save(*args, **kwargs)
 
+    def __str__(self):
+        return f"{self.description} on {self.date} ({self.type})"    
+
 
 # Project 
 class Project(models.Model):
@@ -278,6 +303,25 @@ class Task(models.Model):
     def __str__(self):
         return f"{self.title} - {self.status}"
 
+
+
+# project images---------------------------------------------------------
+class ProjectImages(models.Model):
+    project = models.ForeignKey(Project, on_delete=models.CASCADE,related_name="images")
+    image = models.ImageField(upload_to="project_images/")
+    uploaded_at = models.DateTimeField(auto_now_add=True)
+
+    def __str__(self):
+        return f"Image for {self.project.project_name}"
+
+# project files---------------------------------------------------------
+class ProjectFile(models.Model):
+    project = models.ForeignKey(Project, on_delete=models.CASCADE, related_name="files")
+    file = models.FileField(upload_to="project_files/")
+    uploaded_at = models.DateTimeField(auto_now_add=True)
+
+    def __str__(self):
+        return f"{self.project.project_name} - {self.file.name}"
 # ---------------------------
 # NotificationLog
 # ---------------------------
@@ -335,20 +379,3 @@ class Designation(models.Model):
         return self.title    
     
 
-  # new branch table  
-class Branch(models.Model):
-    name = models.CharField(max_length=100)
-    location = models.CharField(max_length=255)
-    google_map_link = models.URLField(max_length=500, blank=True, null=True)
-    created_at = models.DateTimeField(auto_now_add=True)
-    updated_at = models.DateTimeField(auto_now=True)
-    address = models.TextField(null=True,blank=True)
-    status = models.CharField(max_length=20, default="Active")  # Active / Inactive
-    starting_time = models.TimeField(null=True,blank=True)
-    closing_time = models.TimeField(null=True,blank=True)
-    phone = models.CharField(max_length=20, blank=True, null=True)
-    email = models.EmailField(blank=True, null=True)
-    company_id = models.CharField(max_length=100, blank=True, null=True)
-
-    def __str__(self):
-        return self.name  

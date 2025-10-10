@@ -376,9 +376,24 @@ class ProjectSerializer(serializers.ModelSerializer):
         return project
 
 
+# project image serializer
+class ProjectImageSerializer(serializers.ModelSerializer):  
+    class Meta:
+        model = ProjectImages
+        fields = ['id', 'project', 'image', 'uploaded_at']
+        read_only_fields = ['id', 'uploaded_at']
+
+class ProjectFileSerializer(serializers.ModelSerializer):
+    project_name = serializers.CharField(source='project.project_name', read_only=True)
+
+    class Meta:
+        model = ProjectFile
+        fields = ['id', 'project', 'project_name', 'file', 'uploaded_at']
 class ProjectReadSerializer(serializers.ModelSerializer):
     members = ProjectMembersReadSerializer(source="projectmembers_set", many=True, read_only=True)
     tasks = TaskReadSerializer(source="task_set", many=True, read_only=True)
+    project_images = ProjectImageSerializer(source="images", many=True, read_only=True)
+    ptoject_files = ProjectFileSerializer(source="files", many=True, read_only=True)
 
     class Meta:
         model = Project
@@ -399,6 +414,8 @@ class ProjectReadSerializer(serializers.ModelSerializer):
             "attachment",
             "members",
             "tasks",
+            "project_images",
+            "ptoject_files",
         ]
 
 # leave list serializer 

@@ -10,6 +10,14 @@ path('taskpercentage/', TaskPercentageAPIView.as_view(), name='task-percentage')
 path('add-project/',AddProjectApi.as_view(),name='add-project'),
 path('update-project/<int:pk>/',UpdateProjectApi.as_view(),name='update-project'),
 path("projectsdelete/<int:project_id>/", DeleteProjectApi.as_view(), name="delete-project"),
+path('project-details-by-id/<int:project_id>/', ProjectDetailByIDAPIView.as_view(), name='project-details-by-id'),
+path('add-list-project-image/',ProjectImageUploadApi.as_view(),name='add-project-image'),
+path('add-list-project-image/<int:project_id>/',ProjectImageUploadApi.as_view(),name='add-list-project-image'),
+path('delete-update-project-image/<int:image_id>/',ProjectImageDeleteUpdateApi.as_view(),name='delete-update-project-image'),
+path('projectfile/', ProjectFileListCreateAPIView.as_view(), name='project-file'),
+path('project-filesview/<int:project_id>/', ProjectFileRetrieveAPIView.as_view(), name='project-file-detail'),
+path('project-filesupdate/<int:id>/', ProjectFileUpdateAPIView.as_view(), name='project-file-update'),
+path('projectfiledelete/<int:id>/', ProjectFileDeleteAPIView.as_view(), name='projectfile-delete'),
 path('list-all-projects/',ListProjectsApi.as_view(),name='list-all-projects'),
 path('list-all-tasks/',TaskListAPIView.as_view(),name='list-all-tasks'),
 path('add-tasks-to-project/',AddTasksToProjectApi.as_view(),name='add-tasks-to-project'),
@@ -35,6 +43,9 @@ path('todays-attendance-count/',TodaysAttendanceCount.as_view(),name='todays-att
 path("employeesfilter-by-designation/", EmployeeListAdminFilteredView.as_view(), name="employeesfilter-by-designation"),
 path('todays-all-employess-attendance/',AllTodaysEmployeeCheckinCheckOutDetails.as_view(),name='todays-all-employess-attendance'),
 path("employeesdetails/<int:employee_id>/", EmployeeAttendanceView.as_view(), name="employee-attendance"),
+path("employeesdetailspast7days/<int:employee_id>/", EmployeeAttendanceViewpast7days.as_view(), name="employee-attendancepast7days"),
+path('employee-att-details-by-date-range/',AttendanceByDateRangeView.as_view(),name='employee-att-details-by-date-range'),
+path('filter-emp-attendance-by-status/<int:employee_id>/',EmployeeAttendanceFilterByStatusView.as_view(),name='filter-emp-attendance-by-status'),
 path("attendanceedit/<int:pk>/", AttendanceEditView.as_view(), name="attendance-update"),
 path("holidayscreate/", HolidayCreateView.as_view(), name="holiday-create"),
 
@@ -69,5 +80,6 @@ path("taskliststatusfilter/<str:status_filter>/", TaskStatusFilterAPIView.as_vie
 path('create-list-branch/', BranchCreateListView.as_view(), name='create-list-branch'),
 
 path("employeesactivity/", EmployeeActivityListAPIView.as_view(), name="employeeActivity-list"),
+path('last-7-days-employee-activity/', Last7DaysActivityListAPIView.as_view(), name='last-7-days-employee-activity'),
 
 ]

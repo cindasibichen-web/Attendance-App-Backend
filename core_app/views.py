@@ -10,26 +10,14 @@ from .models import User, EmployeeDetail, EmailOTP, NotificationLog
 from .serializers import UserLoginSerializer, EmployeeSerializer
 import random
 from django.contrib.auth.hashers import check_password
-from rest_framework.views import APIView
-from rest_framework.response import Response
-from rest_framework import status
 from django.contrib.auth.models import User
-from rest_framework.permissions import AllowAny
 from rest_framework_simplejwt.tokens import RefreshToken, TokenError
-from django.utils import timezone
-from rest_framework.views import APIView
-from rest_framework.response import Response
-from rest_framework import status
 from rest_framework.generics import ListAPIView
-from rest_framework.permissions import AllowAny
 from django.core.mail import send_mail
 from .models import User, EmailOTP
 import random
 import hashlib
-from rest_framework.views import APIView
 from rest_framework.parsers import MultiPartParser, FormParser
-from rest_framework.response import Response
-from rest_framework import status
 from datetime import time
 from rest_framework.permissions import BasePermission
 from . serializers import *
@@ -40,17 +28,16 @@ import io
 import base64
 from django.http import JsonResponse
 from django.utils.crypto import get_random_string
-
-from rest_framework.permissions import IsAuthenticated
+from django.shortcuts import get_object_or_404
 from rest_framework.decorators import api_view, permission_classes
 import json
 from django.http import JsonResponse
-from django.utils import timezone
 from math import radians, sin, cos, sqrt, atan2
 from collections import defaultdict
 from . models import *
 import holidays as pyholidays
 from datetime import date, datetime
+from django.db.models import F, ExpressionWrapper, fields, Sum
 
 
 # -----------------------------
@@ -67,6 +54,7 @@ def generate_otp():
 
 class LoginView(APIView):
     permission_classes = [AllowAny]
+
 
     def post(self, request):
         email = request.data.get("email")
@@ -129,6 +117,7 @@ class LoginView(APIView):
                     "privileges": privileges,
                     
                 },
+
                 "access": str(refresh.access_token),
                 "refresh": str(refresh),
             },
@@ -137,8 +126,25 @@ class LoginView(APIView):
 
 
 
-# refreshing token api 
+# check whether the user in logged in or not 
+class CheckLoginView(APIView):
+    permission_classes = [IsAuthenticated]
 
+    def get(self, request):
+        user = request.user
+        return Response({
+            "success": True,
+            "message": "User is already logged in",
+            "user": {
+                "id": user.id,
+                "email": user.email,
+                "role": user.role,
+            }
+        })
+
+
+# -----------------------------
+# refreshing token api 
 class RefreshTokenView(APIView):
     permission_classes = [AllowAny]
 
@@ -174,13 +180,13 @@ class RefreshTokenView(APIView):
                 {
                     "success": True,
                     "message": "Token refreshed successfully",
-                    # "access": str(new_refresh.access_token),
-                    # "refresh": str(new_refresh),
-                    # "user": {
-                    #     "id": user.id,
-                    #     "email": user.email,
-                    #     "role": user.role,
-                    # },
+                    "access": str(new_refresh.access_token),
+                    "refresh": str(new_refresh),
+                    "user": {
+                        "id": user.id,
+                        "email": user.email,
+                        "role": user.role,
+                    },
                 },
                 status=status.HTTP_200_OK,
             )
@@ -206,6 +212,7 @@ def generate_otp():
 
 class ForgotPasswordView(APIView):
     permission_classes = [AllowAny]
+    
 
     def post(self, request):
         email = request.data.get("email")
@@ -231,6 +238,37 @@ class ForgotPasswordView(APIView):
         )
 
         return Response({"success": True, "message": "OTP sent to your email"}, status=200)
+
+
+# resend otp view
+class ResendOTPView(APIView):
+    permission_classes = [AllowAny]
+
+    def post(self, request):
+        email = request.data.get("email")
+        if not email:
+            return Response({"success": False, "error": "Email is required"}, status=400)
+
+        try:
+            user = User.objects.get(email=email)
+        except User.DoesNotExist:
+            return Response({"success": False, "error": "Email not found"}, status=404)
+
+        otp, otp_hash = generate_otp()
+        expiry = timezone.now() + timezone.timedelta(minutes=10)
+
+        EmailOTP.objects.create(user=user, otp_hash=otp_hash, purpose="resend-otp", expires_at=expiry)
+
+        send_mail(
+            subject="Your OTP Code",
+            message=f"Your OTP for password reset is: {otp}",
+            from_email="no-reply@example.com",
+            recipient_list=[email],
+            fail_silently=False,
+        )
+
+        return Response({"success": True, "message": "OTP re-sent to your email"}, status=200)
+
 # -----------------------------
 # Verify OTP
 # -----------------------------
@@ -289,11 +327,19 @@ class ResetPasswordView(APIView):
                 return Response({"success": False, "error": "OTP not verified"}, status=400)
         except User.DoesNotExist:
             return Response({"success": False, "error": "Invalid email"}, status=404)
-
+        
+        # check if old password and new password are same
+        if check_password(new_password, user.password):
+            return Response({"success": False, "error": "New password cannot be the same as the old password"}, status=400)
         user.password = make_password(new_password)
         user.save()
 
         return Response({"success": True, "message": "Password reset successfully"}, status=200)
+
+
+
+
+
 
 # -----------------------------
 # Profile
@@ -330,6 +376,7 @@ class UserProfileView(APIView):
 # employee detail view
 class EmployeeProfileView(APIView):
     permission_classes = [IsAuthenticated]
+    
 
     def get(self, request):
         try:
@@ -443,12 +490,6 @@ class EmployeeRegistrationView(APIView):
 
 
 
-from rest_framework.permissions import AllowAny, IsAuthenticated
-from rest_framework.response import Response
-from rest_framework.views import APIView
-from django.shortcuts import get_object_or_404
-from rest_framework_simplejwt.tokens import RefreshToken
-from django.utils import timezone
 # import numpy as np
 
 # Try to import face_recognition, but don't fail if it's not available
@@ -780,22 +821,27 @@ class FaceVerifyView(APIView):
         longitude = request.data.get("longitude")
 
         if not user_id or not image_file:
-            return Response({"success": False, "error": "user_id and image are required"}, status=400)
+            return Response(
+                {"success": False, "error": "user_id and image are required"},
+                status=400
+            )
 
-        employee = get_object_or_404(EmployeeDetail, user=user_id)
+        employee = get_object_or_404(EmployeeDetail, user__id=user_id)
+        user = employee.user
 
+        # Ensure employee has profile picture
         if not employee.profile_pic:
             return Response({"success": False, "error": "No profile picture found"}, status=404)
 
-        # Ensure employee has face embedding
-        if employee.face_encoding is None:
+        # Ensure employee has face embedding saved
+        if not employee.face_encoding:
             profile_embedding = generate_face_embedding(employee.profile_pic.path)
-            if profile_embedding is None:
+            if not profile_embedding:
                 return Response({"success": False, "error": "No face detected in profile picture"}, status=400)
-            employee.face_encoding = profile_embedding.tolist()
+            employee.face_encoding = profile_embedding
             employee.save()
 
-        # Save uploaded file temporarily to generate embedding
+        # Save uploaded image temporarily
         with tempfile.NamedTemporaryFile(delete=False, suffix=".jpg") as tmp_file:
             for chunk in image_file.chunks():
                 tmp_file.write(chunk)
@@ -804,44 +850,45 @@ class FaceVerifyView(APIView):
         uploaded_embedding = generate_face_embedding(uploaded_path)
         os.remove(uploaded_path)
 
-        if uploaded_embedding is None:
+        if not uploaded_embedding:
             return Response({"success": False, "error": "No face detected in uploaded image"}, status=400)
 
-        # Compare embeddings
-        match, confidence = compare_faces(employee.face_encoding, uploaded_embedding, threshold=0.5)
+        # Compare faces using cosine similarity
+        match, confidence = compare_faces(employee.face_encoding, uploaded_embedding, threshold=0.7)
 
         if not match:
             return Response({
                 "success": False,
-                "error": "Face does not match",
+                "error": "Face does not match. Verification failed.",
                 "confidence": confidence
             }, status=401)
-        # ✅ Check for active punch-in
-        today = timezone.now().date()
 
+        # ✅ Mark Attendance
+        today = timezone.localdate()
+
+        # Check approved leave
         approved_leave = Leave.objects.filter(
-        employee=employee,
-        start_date__lte=today,
-        end_date__gte=today,
-        status="Approved"
-          ).first()
+            employee=employee,
+            start_date__lte=today,
+            end_date__gte=today,
+            status="Approved"
+        ).first()
 
         if approved_leave:
-        # ✅ If employee punches in, mark the leave as not taken
-         approved_leave.status = "Not Taken"
-         approved_leave.save()
+            approved_leave.status = "Not Taken"
+            approved_leave.save()
 
-         # (Optional) Log or notify
-         NotificationLog.objects.create(
-             user=user,
-             action=f"Leave on {today} marked as 'Not Taken' due to punch-in.",
-             title="Leave Updated"
-         )
-        
+            NotificationLog.objects.create(
+                user=user,
+                action=f"Leave on {today} marked as 'Not Taken' due to punch-in.",
+                title="Leave Updated"
+            )
+
+        # Check if already punched in
         active_punch_in = Attendance.objects.filter(
             employee=employee,
             date=today,
-            out_time__isnull=True,  # means still active
+            out_time__isnull=True,
             punch_in=True
         ).first()
 
@@ -850,89 +897,250 @@ class FaceVerifyView(APIView):
                 "success": False,
                 "message": "You already have an active punch-in. Please punch-out first."
             }, status=400)
-        
+
         today_punch_count = Attendance.objects.filter(employee=employee, date=today).count()
 
-        # Mark attendance
-        user = employee.user
-        # Convert punch-in time to IST
+        # Determine punch-in status (Late / Present)
         ist = pytz.timezone("Asia/Kolkata")
         in_time_utc = timezone.now()
         in_time_ist = in_time_utc.astimezone(ist)
 
-        late_threshold = time(9, 40) 
-    # Check for late
-        if today_punch_count == 0:
-            if in_time_ist.time() > late_threshold:
-                status_value = "Late"
-                NotificationLog.objects.create(
-                    user=user,
-                    action=f"Late punch-in recorded today at {in_time_ist.strftime('%H:%M:%S')}",
-                    title = status_value,
-                )
-            else:
-                status_value = "Present"
+        late_threshold = time(9, 40)
+        if today_punch_count == 0 and in_time_ist.time() > late_threshold:
+            status_value = "Late"
+            NotificationLog.objects.create(
+                user=user,
+                action=f"Late punch-in recorded at {in_time_ist.strftime('%H:%M:%S')}",
+                title=status_value,
+            )
         else:
-        # For subsequent punch-ins, don't mark as late or create notification
-         status_value = "Present"
+            status_value = "Present"
 
-
+        # Save Attendance Record
         Attendance.objects.create(
             employee=employee,
-            date=timezone.now().date(),
-            in_time=timezone.now(),
+            date=today,
+            in_time=in_time_utc,
             attendance_type="WFH",
-            status="Present",
+            status=status_value,
             location=f"{latitude},{longitude}",
             selfie=image_file,
             verified_by=user,
+            punch_in=True
         )
 
         return Response({
             "success": True,
-            "message": "Face matched and check-in recorded",
+            "message": "Face matched and check-in recorded successfully.",
             "confidence": confidence,
             "employee": EmployeeSerializer(employee).data,
             "attendance_type": "WFH",
-            "on-site": False,
+            "on_site": False,
             "user": UserLoginSerializer(user).data,
+        }, status=200)
+
+    # def post(self, request):
+    #     user_id = request.data.get("user_id")
+    #     image_file = request.FILES.get("image")
+    #     latitude = request.data.get("latitude")
+    #     longitude = request.data.get("longitude")
+
+    #     if not user_id or not image_file:
+    #         return Response({"success": False, "error": "user_id and image are required"}, status=400)
+
+    #     employee = get_object_or_404(EmployeeDetail, user__id=user_id)
+
+    #     if not employee.profile_pic:
+    #         return Response({"success": False, "error": "No profile picture found"}, status=404)
+
+    #     # Ensure employee has face embedding
+    #     if employee.face_encoding is None:
+    #         profile_embedding = generate_face_embedding(employee.profile_pic.path)
+    #         if profile_embedding is None:
+    #             return Response({"success": False, "error": "No face detected in profile picture"}, status=400)
+    #         employee.face_encoding = profile_embedding.tolist()
+    #         employee.save()
+
+    #     # Save uploaded file temporarily to generate embedding
+    #     with tempfile.NamedTemporaryFile(delete=False, suffix=".jpg") as tmp_file:
+    #         for chunk in image_file.chunks():
+    #             tmp_file.write(chunk)
+    #         uploaded_path = tmp_file.name
+
+    #     uploaded_embedding = generate_face_embedding(uploaded_path)
+    #     os.remove(uploaded_path)
+
+    #     if uploaded_embedding is None:
+    #         return Response({"success": False, "error": "No face detected in uploaded image"}, status=400)
+
+    #     # Compare embeddings
+    #     match, confidence = compare_faces(employee.face_encoding, uploaded_embedding, threshold=0.5)
+
+    #     if not match:
+    #         return Response({
+    #             "success": False,
+    #             "error": "Face does not match",
+    #             "confidence": confidence
+    #         }, status=401)
+    #     # ✅ Check for active punch-in
+    #     today = timezone.now().date()
+
+    #     approved_leave = Leave.objects.filter(
+    #     employee=employee,
+    #     start_date__lte=today,
+    #     end_date__gte=today,
+    #     status="Approved"
+    #       ).first()
+
+    #     if approved_leave:
+    #     # ✅ If employee punches in, mark the leave as not taken
+    #      approved_leave.status = "Not Taken"
+    #      approved_leave.save()
+
+    #      # (Optional) Log or notify
+    #      NotificationLog.objects.create(
+    #          user=user,
+    #          action=f"Leave on {today} marked as 'Not Taken' due to punch-in.",
+    #          title="Leave Updated"
+    #      )
+        
+    #     active_punch_in = Attendance.objects.filter(
+    #         employee=employee,
+    #         date=today,
+    #         out_time__isnull=True,  # means still active
+    #         punch_in=True
+    #     ).first()
+
+    #     if active_punch_in:
+    #         return Response({
+    #             "success": False,
+    #             "message": "You already have an active punch-in. Please punch-out first."
+    #         }, status=400)
+        
+    #     today_punch_count = Attendance.objects.filter(employee=employee, date=today).count()
+
+    #     # Mark attendance
+    #     user = employee.user
+    #     # Convert punch-in time to IST
+    #     ist = pytz.timezone("Asia/Kolkata")
+    #     in_time_utc = timezone.now()
+    #     in_time_ist = in_time_utc.astimezone(ist)
+
+    #     late_threshold = time(9, 40) 
+    # # Check for late
+    #     if today_punch_count == 0:
+    #         if in_time_ist.time() > late_threshold:
+    #             status_value = "Late"
+    #             NotificationLog.objects.create(
+    #                 user=user,
+    #                 action=f"Late punch-in recorded today at {in_time_ist.strftime('%H:%M:%S')}",
+    #                 title = status_value,
+    #             )
+    #         else:
+    #             status_value = "Present"
+    #     else:
+    #     # For subsequent punch-ins, don't mark as late or create notification
+    #      status_value = "Present"
+
+
+    #     Attendance.objects.create(
+    #         employee=employee,
+    #         date=timezone.now().date(),
+    #         in_time=timezone.now(),
+    #         attendance_type="WFH",
+    #         status="Present",
+    #         location=f"{latitude},{longitude}",
+    #         selfie=image_file,
+    #         verified_by=user,
+    #     )
+
+    #     return Response({
+    #         "success": True,
+    #         "message": "Face matched and check-in recorded",
+    #         "confidence": confidence,
+    #         "employee": EmployeeSerializer(employee).data,
+    #         "attendance_type": "WFH",
+    #         "on-site": False,
+    #         "user": UserLoginSerializer(user).data,
            
-        })
+    #     })
     
-# class FaceLogoutView(APIView):
-#     permission_classes = [AllowAny]
-
-#     def post(self, request):
-#         user_id = request.data.get("user_id")
-#         if not user_id:
-#             return Response({"success": False, "error": "user_id is required"}, status=400)
-
-#         employee = get_object_or_404(EmployeeDetail, user_id=user_id)
-
-#         attendance = Attendance.objects.filter(employee=employee, date=timezone.now().date(), out_time__isnull=True).last()
-#         if not attendance:
-#             return Response({"success": False, "error": "No active attendance found"}, status=404)
-
-#         attendance.outtime = timezone.now()
-#         attendance.save() 
-
-#         return Response({
-#             "success": True,
-#             "message": "Logout recorded successfully",
-#             "attendance": {
-#                 "date": attendance.date.strftime("%Y-%m-%d"),
-#                 "in_time": attendance.in_time.astimezone().strftime("%H:%M:%S"),
-#                 # "out_time": attendance.out_time.astimezone().strftime("%H:%M:%S"),
-#                 "location": attendance.location,
-#                 # "working_hours": format_timedelta(attendance.working_hours or timedelta()),
-#                 # "overtime": format_timedelta(attendance.overtime or timedelta()),
-#             }
-#         })
 
 
+# face log out api - punch out
 class FaceLogoutView(APIView):
     permission_classes = [AllowAny]
 
+    # def post(self, request):
+    #     user_id = request.data.get("user_id")
+    #     image_file = request.FILES.get("image")
+    #     latitude = request.data.get("latitude")
+    #     longitude = request.data.get("longitude")
+
+    #     if not user_id or not image_file:
+    #         return Response({"success": False, "error": "user_id and image are required"}, status=400)
+    #     print("DATA:", request.data)
+    #     print("FILES:", request.FILES)
+
+
+    #     employee = get_object_or_404(EmployeeDetail, user__id=user_id)
+
+    #     if employee.face_encoding is None:
+    #         if not employee.profile_pic:
+    #             return Response({"success": False, "error": "No profile picture found"}, status=404)
+            
+    #         profile_embedding = generate_face_embedding(employee.profile_pic.path)
+    #         if profile_embedding is None:
+    #             return Response({"success": False, "error": "No face detected in profile picture"}, status=400)
+    #         employee.face_encoding = profile_embedding.tolist()
+    #         employee.save()
+
+    #     # Save uploaded logout image temporarily to generate embedding
+    #     with tempfile.NamedTemporaryFile(delete=False, suffix=".jpg") as tmp_file:
+    #         for chunk in image_file.chunks():
+    #             tmp_file.write(chunk)
+    #         uploaded_path = tmp_file.name
+
+    #     uploaded_embedding = generate_face_embedding(uploaded_path)
+    #     os.remove(uploaded_path)
+
+    #     if uploaded_embedding is None:
+    #         return Response({"success": False, "error": "No face detected in uploaded image"}, status=400)
+
+    #     # Compare embeddings
+    #     match, confidence = compare_faces(employee.face_encoding, uploaded_embedding, threshold=0.5)
+    #     if not match:
+    #         return Response({
+    #             "success": False,
+    #             "error": "Face does not match",
+    #             "confidence": confidence
+    #         }, status=401)
+
+    #     # Find active attendance record
+    #     attendance = Attendance.objects.filter(
+    #         employee=employee,
+    #         date=timezone.now().date(),
+    #         out_time__isnull=True
+    #     ).last()
+
+    #     if not attendance:
+    #         return Response({"success": False, "error": "No active attendance found"}, status=404)
+
+    #     attendance.out_time = timezone.now()
+    #     attendance.save()
+
+    #     return Response({
+    #         "success": True,
+    #         "message": "Face matched and logout recorded",
+    #         "confidence": confidence,
+    #         "attendance": {
+    #             "date": attendance.date.strftime("%Y-%m-%d"),
+    #             "in_time": attendance.in_time.astimezone().strftime("%H:%M:%S"),
+    #             "out_time": attendance.out_time.astimezone().strftime("%H:%M:%S"),
+    #             "location": f"{latitude},{longitude}",
+    #             "employee": EmployeeSerializer(employee).data
+    #         }
+    #     })
     def post(self, request):
         user_id = request.data.get("user_id")
         image_file = request.FILES.get("image")
@@ -941,23 +1149,26 @@ class FaceLogoutView(APIView):
 
         if not user_id or not image_file:
             return Response({"success": False, "error": "user_id and image are required"}, status=400)
-        print("DATA:", request.data)
-        print("FILES:", request.FILES)
 
+        employee = get_object_or_404(EmployeeDetail, user__id=user_id)
 
-        employee = get_object_or_404(EmployeeDetail, user=user_id)
-
-        if employee.face_encoding is None:
+        # ------------------------------
+        # 1️⃣ Ensure employee face encoding exists
+        # ------------------------------
+        if not employee.face_encoding:
             if not employee.profile_pic:
                 return Response({"success": False, "error": "No profile picture found"}, status=404)
             
             profile_embedding = generate_face_embedding(employee.profile_pic.path)
-            if profile_embedding is None:
+            if not profile_embedding:
                 return Response({"success": False, "error": "No face detected in profile picture"}, status=400)
-            employee.face_encoding = profile_embedding.tolist()
+            
+            employee.face_encoding = profile_embedding
             employee.save()
 
-        # Save uploaded logout image temporarily to generate embedding
+        # ------------------------------
+        # 2️⃣ Generate embedding from uploaded logout selfie
+        # ------------------------------
         with tempfile.NamedTemporaryFile(delete=False, suffix=".jpg") as tmp_file:
             for chunk in image_file.chunks():
                 tmp_file.write(chunk)
@@ -966,43 +1177,56 @@ class FaceLogoutView(APIView):
         uploaded_embedding = generate_face_embedding(uploaded_path)
         os.remove(uploaded_path)
 
-        if uploaded_embedding is None:
+        if not uploaded_embedding:
             return Response({"success": False, "error": "No face detected in uploaded image"}, status=400)
 
-        # Compare embeddings
-        match, confidence = compare_faces(employee.face_encoding, uploaded_embedding, threshold=0.5)
+        # ------------------------------
+        # 3️⃣ Compare embeddings
+        # ------------------------------
+        match, confidence = compare_faces(employee.face_encoding, uploaded_embedding, threshold=0.7)
+
         if not match:
             return Response({
                 "success": False,
-                "error": "Face does not match",
+                "error": "Face does not match. Logout verification failed.",
                 "confidence": confidence
             }, status=401)
 
-        # Find active attendance record
+        # ------------------------------
+        # 4️⃣ Find today's active attendance record
+        # ------------------------------
         attendance = Attendance.objects.filter(
             employee=employee,
-            date=timezone.now().date(),
+            date=timezone.localdate(),
             out_time__isnull=True
         ).last()
 
         if not attendance:
-            return Response({"success": False, "error": "No active attendance found"}, status=404)
+            return Response({"success": False, "error": "No active attendance record found."}, status=404)
 
+        # ------------------------------
+        # 5️⃣ Update attendance with logout info
+        # ------------------------------
         attendance.out_time = timezone.now()
+        attendance.selfie = image_file  # ✅ save logout selfie image
+        attendance.location = f"{latitude},{longitude}" if latitude and longitude else attendance.location
         attendance.save()
 
+        # ------------------------------
+        # 6️⃣ Return successful response
+        # ------------------------------
         return Response({
             "success": True,
-            "message": "Face matched and logout recorded",
+            "message": "Face matched and logout recorded successfully.",
             "confidence": confidence,
             "attendance": {
                 "date": attendance.date.strftime("%Y-%m-%d"),
-                "in_time": attendance.in_time.astimezone().strftime("%H:%M:%S"),
+                "in_time": attendance.in_time.astimezone().strftime("%H:%M:%S") if attendance.in_time else None,
                 "out_time": attendance.out_time.astimezone().strftime("%H:%M:%S"),
-                "location": f"{latitude},{longitude}",
+                "location": attendance.location,
                 "employee": EmployeeSerializer(employee).data
             }
-        })
+        }, status=200)
 
 
 
@@ -1431,43 +1655,69 @@ class EmployeePresenceAbsenceLeaveCountView(APIView):
         # Current local date
         today = timezone.localtime(timezone.now()).date()
 
-        # Fetch all attendances for the employee
+        # -----------------------------
+        # 1. Attendance-based presence, absence, late
+        # -----------------------------
         attendances = Attendance.objects.filter(employee=employee)
 
+        # Group attendances by date and use only the first punch-in (earliest in_time)
+        attendance_by_date = defaultdict(list)
         for att in attendances:
-            year, month = att.date.year, att.date.month
+            attendance_by_date[att.date].append(att)
 
-            # Check if absent explicitly
-            if att.status == "Absent":
+        for att_date, att_list in attendance_by_date.items():
+            year, month = att_date.year, att_date.month
+
+            # If any record explicitly marked Absent for the date, count as absent
+            if any(a.status == "Absent" for a in att_list):
                 data[year][month]["absence_count"] += 1
                 continue
 
-            # Check punch time
-            if att.in_time:
-                # Convert in_time to local time
-                local_in_time = timezone.localtime(att.in_time).time()
-
-                if local_in_time <= time(9, 40):
+            # Find earliest in_time for the date
+            in_times = [a.in_time for a in att_list if a.in_time]
+            if in_times:
+                first_in = min(in_times)
+                local_first_in = timezone.localtime(first_in).time()
+                if local_first_in <= time(9, 40):
                     data[year][month]["presence_count"] += 1
                 else:
-                    # Arrived after 9:40 → late + absent
+                    # Late arrival counts as late + absence
                     data[year][month]["late_count"] += 1
                     data[year][month]["absence_count"] += 1
             else:
-                # No punch → absent
+                # No in_time recorded that day → absent
                 data[year][month]["absence_count"] += 1
 
-        # Handle leaves
-        leaves = Leave.objects.filter(user=user,status="Approved").values("start_date", "end_date")
+        # -----------------------------
+        # 2. Company holidays to exclude
+        # -----------------------------
+        company_holidays = set(
+            Holiday.objects.filter(type="Company Holiday").values_list("date", flat=True)
+        )
+
+        # -----------------------------
+        # 3. Leave-based count (excluding Sundays & holidays)
+        # -----------------------------
+        leaves = Leave.objects.filter(user=user, status="Approved").values("start_date", "end_date")
+
         for leave in leaves:
-            start, end = leave["start_date"], leave["end_date"]
+            start = leave["start_date"]
+            end = leave["end_date"]
+
+            if not start or not end:
+                continue
+
             current = start
             while current <= end:
-                year, month = current.year, current.month
-                data[year][month]["leave_count"] += 1
+                # Exclude Sundays (weekday() == 6) and Company Holidays
+                if current.weekday() != 6 and current not in company_holidays:
+                    year, month = current.year, current.month
+                    data[year][month]["leave_count"] += 1
                 current += timedelta(days=1)
 
-        # Sort and prepare final output
+        # -----------------------------
+        # 4. Sort & format final data
+        # -----------------------------
         now = timezone.localtime(timezone.now())
         current_year = now.year
         current_month = now.month
@@ -1486,7 +1736,7 @@ class EmployeePresenceAbsenceLeaveCountView(APIView):
             "message": "Monthly counts listed successfully",
             "data": final_data
         })
-    
+
  # leave applying api
 class LeaveApplyingView(APIView):
     permission_classes = [IsAuthenticated]
@@ -1531,22 +1781,222 @@ class LeaveApplyingView(APIView):
         return Response({"success": False, "errors": serializer.errors})
 
 
-
-# employee leave taken , pending request , balance leave , approved leaves , rejected Leaves , upcoming leaves count api 
+# employee leave taken , pending request , balance leave , approved leaves , rejected Leaves , upcoming leaves count api based pn start date and end date 
 class DashboardLeaveDetailsCountAPI(APIView):
     permission_classes = [IsAuthenticated]
 
-    def get(self , request , *args , **kwargs):
+    def get(self, request, *args, **kwargs):
         user = request.user
-        employee = user.employee_profile
-        total_leave_taken = Leave.objects.filter(user=user , status = "Approved").count()
-        pending_request = Leave.objects.filter(user=user,status="Pending").count()
-        approved_leaves = Leave.objects.filter(user=user , status = "Approved").count()
-        rejected_leaves = Leave.objects.filter(user=user , status="Rejected").count()
-              
-        # upcoming_leaves = Leave.objects.all()
-        # balance_leave = Leave.objects.all()
-        return Response({"success": True, "total_leave_taken": total_leave_taken, "pending_request": pending_request, "approved_leaves": approved_leaves , "rejected_leaves" :rejected_leaves})
+
+        try:
+            employee = EmployeeDetail.objects.get(user=user)
+        except EmployeeDetail.DoesNotExist:
+            return Response({
+                "success": False,
+                "message": "Employee record not found for this user"
+            }, status=404)
+
+        start_filter = request.query_params.get("start_date")
+        end_filter = request.query_params.get("end_date")
+
+        leaves = Leave.objects.filter(employee=employee)
+
+        if start_filter and end_filter:
+            try:
+                start_filter = datetime.strptime(start_filter, "%Y-%m-%d").date()
+                end_filter = datetime.strptime(end_filter, "%Y-%m-%d").date()
+                leaves = leaves.filter(
+                    start_date__gte=start_filter,
+                    end_date__lte=end_filter
+                )
+            except ValueError:
+                return Response(
+                    {"success": False, "message": "Invalid date format. Use YYYY-MM-DD."},
+                    status=400
+                )
+
+        company_holidays = set(
+            Holiday.objects.filter(type="Company Holiday").values_list("date", flat=True)
+        )
+
+        def get_working_days(start_date, end_date):
+            count = 0
+            current = start_date
+            while current <= end_date:
+                if current.weekday() != 6 and current not in company_holidays:
+                    count += 1
+                current += timedelta(days=1)
+            return count
+
+        def get_total_days_by_status(status_value):
+            total_days = 0
+            for leave in leaves.filter(status=status_value):
+                if leave.start_date and leave.end_date:
+                    total_days += get_working_days(leave.start_date, leave.end_date)
+            return total_days
+
+        today = date.today()
+        total_leave_taken_year = get_total_days_by_status("Approved")
+        approved_days = get_total_days_by_status("Approved")
+        pending_days = get_total_days_by_status("Pending")
+        rejected_days = get_total_days_by_status("Rejected")
+
+        upcoming_days = sum(
+            get_working_days(l.start_date, l.end_date)
+            for l in leaves.filter(status="Approved", start_date__gt=today)
+            if l.start_date and l.end_date
+        )
+
+        # ✅ Count of requests (not days)
+        approved_count = leaves.filter(status="Approved").count()
+        pending_count = leaves.filter(status="Pending").count()
+        rejected_count = leaves.filter(status="Rejected").count()
+        upcoming_count = leaves.filter(status="Approved", start_date__gt=today).count()
+
+        return Response({
+            "success": True,
+            "message": "Leave details count fetched successfully",
+            "user_id": user.id,
+            "employee_id": employee.id,
+
+            # 🧮 Days count (optional)
+            "total_leave_taken": total_leave_taken_year,
+            # "approved_leave_days": approved_days,
+            # "pending_leave_days": pending_days,
+            # "rejected_leave_days": rejected_days,
+            # "upcoming_leave_days": upcoming_days,
+
+            # 📋 Request count (preferred for dashboard)
+            "approved_requests": approved_count,
+            "pending_requests": pending_count,
+            "rejected_requests": rejected_count,
+            "upcoming_requests": upcoming_count,
+        })
+
+    # def get(self, request, *args, **kwargs):
+    #     user = request.user
+
+    #     # --- Optional date filters ---
+    #     start_filter = request.query_params.get("start_date")
+    #     end_filter = request.query_params.get("end_date")
+
+    #     leaves = Leave.objects.filter(user=user)
+
+    #     if start_filter and end_filter:
+    #         try:
+    #             start_filter = datetime.strptime(start_filter, "%Y-%m-%d").date()
+    #             end_filter = datetime.strptime(end_filter, "%Y-%m-%d").date()
+    #             leaves = leaves.filter(
+    #                 start_date__gte=start_filter,
+    #                 end_date__lte=end_filter
+    #             )
+    #         except ValueError:
+    #             return Response(
+    #                 {"success": False, "message": "Invalid date format. Use YYYY-MM-DD."},
+    #                 status=400
+    #             )
+
+    #     # ---------------------------
+    #     # Exclude Sundays & Company Holidays
+    #     # ---------------------------
+    #     company_holidays = set(
+    #         Holiday.objects.filter(type="Company Holiday").values_list("date", flat=True)
+    #     )
+
+    #     def get_working_days(start_date, end_date):
+    #         """Return number of working days (excluding Sundays & Company Holidays)."""
+    #         count = 0
+    #         current = start_date
+    #         while current <= end_date:
+    #             if current.weekday() != 6 and current not in company_holidays:
+    #                 count += 1
+    #             current += timedelta(days=1)
+    #         return count
+
+    #     # --- Helper: total leave days by status ---
+    #     def get_total_days_by_status(status_value):
+    #         total_days = 0
+    #         for leave in leaves.filter(status=status_value):
+    #             if leave.start_date and leave.end_date:
+    #                 total_days += get_working_days(leave.start_date, leave.end_date)
+    #         return total_days
+
+    #     # --- Count leave days by status ---
+    #     approved_days = get_total_days_by_status("Approved")
+    #     pending_days = get_total_days_by_status("Pending")
+    #     rejected_days = get_total_days_by_status("Rejected")
+
+    #     # --- Upcoming leaves (future approved) ---
+    #     today = date.today()
+    #     upcoming_days = 0
+    #     for leave in leaves.filter(status="Approved", start_date__gt=today):
+    #         if leave.start_date and leave.end_date:
+    #             upcoming_days += get_working_days(leave.start_date, leave.end_date)
+
+    #     # --- Total leave taken: by year ---
+    #     # Assumption: if start/end filters are provided, compute total within that range;
+    #     # otherwise use the current calendar year.
+    #     today = date.today()
+    #     if start_filter and end_filter:
+    #         year_start = start_filter
+    #         year_end = end_filter
+    #     else:
+    #         year_start = date(today.year, 1, 1)
+    #         year_end = date(today.year, 12, 31)
+
+    #     def get_overlap_days(leave_start, leave_end, range_start, range_end):
+    #         # return number of working days (excl Sundays & holidays) for overlap between two ranges
+    #         if not leave_start or not leave_end:
+    #             return 0
+    #         overlap_start = max(leave_start, range_start)
+    #         overlap_end = min(leave_end, range_end)
+    #         if overlap_start > overlap_end:
+    #             return 0
+    #         return get_working_days(overlap_start, overlap_end)
+
+    #     total_leave_taken_year = 0
+    #     for leave in leaves.filter(status="Approved"):
+    #         total_leave_taken_year += get_overlap_days(leave.start_date, leave.end_date, year_start, year_end)
+
+    #     # --- Month-wise (current month only) breakdown ---
+    #     current_month = today.month
+    #     current_year = today.year
+    #     # compute start and end of current month
+    #     import calendar
+    #     last_day = calendar.monthrange(current_year, current_month)[1]
+    #     month_start = date(current_year, current_month, 1)
+    #     month_end = date(current_year, current_month, last_day)
+
+    #     approved_month_days = 0
+    #     pending_month_days = 0
+    #     rejected_month_days = 0
+    #     upcoming_month_days = 0
+
+    #     for leave in leaves:
+    #         if not leave.start_date or not leave.end_date:
+    #             continue
+
+    #         # count overlap with current month based on status
+    #         if leave.status == "Approved":
+    #             approved_month_days += get_overlap_days(leave.start_date, leave.end_date, month_start, month_end)
+    #             # upcoming within month: approved leaves with start_date in future relative to today but within month
+    #             if leave.start_date > today and month_start <= leave.start_date <= month_end:
+    #                 upcoming_month_days += get_overlap_days(leave.start_date, leave.end_date, month_start, month_end)
+    #         elif leave.status == "Pending":
+    #             pending_month_days += get_overlap_days(leave.start_date, leave.end_date, month_start, month_end)
+    #         elif leave.status == "Rejected":
+    #             rejected_month_days += get_overlap_days(leave.start_date, leave.end_date, month_start, month_end)
+
+    #     return Response({
+    #         "success": True,
+    #         "message": "Leave details count fetched successfully",
+    #         "total_leave_taken": total_leave_taken_year,
+    #             "approved_leaves": approved_month_days,
+    #             "pending_request": pending_month_days,
+    #             "rejected_leaves": rejected_month_days,
+    #             "upcoming_leaves": upcoming_month_days,
+         
+    #     })
   
 
 # login employees leave list
@@ -2033,3 +2483,29 @@ class HolidayListView(APIView):
 #         device.send_message(title=title, body=message)
 #     except FCMDevice.DoesNotExist:
 #         pass  # No device found for user, skip sending notification        
+
+# logout api to blacklist the refresh token
+class LogoutView(APIView):
+    permission_classes = [IsAuthenticated]
+
+    def post(self, request):
+        refresh_token = request.data.get("refresh")
+
+        if not refresh_token:
+            return Response(
+                {"success": False, "message": "Refresh token is required"},
+                status=status.HTTP_400_BAD_REQUEST
+            )
+
+        try:
+            token = RefreshToken(refresh_token)
+            token.blacklist()  # ← this adds it to blacklist
+            return Response(
+                {"success": True, "message": "Logout successful"},
+                status=status.HTTP_205_RESET_CONTENT
+            )
+        except TokenError:
+            return Response(
+                {"success": False, "message": "Invalid or expired token"},
+                status=status.HTTP_400_BAD_REQUEST
+            )

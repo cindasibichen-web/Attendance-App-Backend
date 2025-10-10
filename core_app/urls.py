@@ -5,8 +5,10 @@ urlpatterns = [
     # Auth & Login
     path('login/', LoginView.as_view(), name='login'),
     path('refresh-token/',RefreshTokenView.as_view(),name='refresh-token'),
+    path('check-login/', CheckLoginView.as_view(), name='check-login'),
     path('forgot-password/', ForgotPasswordView.as_view(), name='forgot-password'),
     path('verify-otp/', VerifyOTPView.as_view(), name='verify-otp'),
+    path('resend-otp/', ResendOTPView.as_view(), name='resend-otp'),
     path('reset-password/', ResetPasswordView.as_view(), name='reset-password'),
 
     # User
@@ -45,5 +47,8 @@ urlpatterns = [
     path('notification-list/',NotificationStatusView.as_view(),name='notification-list'),
     path('delete-notification/<int:notification_id>/',NotificationDeleteView.as_view(),name='delete-notification'),
     path('undo-notification/<int:notification_id>/',UndoNotificationDeleteView.as_view(),name='undo-notification'),
+
+
+    path("logout/", LogoutView.as_view(), name="logout"),
 
 ]
