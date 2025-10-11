@@ -26,7 +26,7 @@ ALLOWED_HOSTS = [
     'localhost',
     '127.0.0.1',
     # '192.168.1.9',   # 👈 your system’s LAN IP
-    '192.168.1.4'
+    '192.168.1.2',
 ]
 # Application definition
 INSTALLED_APPS = [

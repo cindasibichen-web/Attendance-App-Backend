@@ -109,10 +109,17 @@ class EmployeeSerializer(serializers.ModelSerializer):
         if profile_pic_file:
             validated_data["profile_pic"] = profile_pic_file
 
+        # Determine role based on user_type
+        user_type = validated_data.get("user_type", "").strip().lower()
+        if user_type in ["admin management", "admin team lead","team lead"]:
+            user_role = "admin"
+        else:
+            user_role = "employee"    
+
         # Create User
         user = User.objects.create(
             email=email,
-            role="employee",
+            role=user_role,
             password=make_password(raw_password),
             first_name=validated_data.get("first_name", ""),
             last_name=validated_data.get("last_name", ""),   
@@ -184,7 +191,8 @@ class AttendanceSerializer(serializers.ModelSerializer):
             "latitude",       # ✅ instead of location
             "longitude", 
             "qr_scan",
-            "selfie",
+            "in_selfie",
+            "out_selfie",
             "status",
             "verified_by",
             "created_at",
@@ -216,6 +224,7 @@ class AttendanceSerializer(serializers.ModelSerializer):
 
 #  leave serializer
 class LeaveSerializer(serializers.ModelSerializer):
+    employee = serializers.StringRelatedField()
     class Meta:
         model = Leave
         fields = [

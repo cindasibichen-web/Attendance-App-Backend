@@ -9,8 +9,8 @@ from datetime import date, timedelta
 # admin profile serializer
 class AdminProfileSerializerView(serializers.ModelSerializer):
     class Meta:
-        model = User
-        fields = ['id', 'email', 'role', 'is_active', 'created_at']
+        model = EmployeeDetail
+        fields = '__all__'
 
 
 class FilterNameSerializer(serializers.ModelSerializer):
@@ -385,3 +385,57 @@ class BranchSerializer(serializers.ModelSerializer):
         model = Branch
         fields = '__all__'
         # fields = ['id', 'name', 'location', 'description']    
+
+
+class AttendanceLeaveSummarydiagramSerializer(serializers.Serializer):
+    absent_count = serializers.IntegerField()
+    leave_count = serializers.IntegerField()
+    sick_leave_count = serializers.IntegerField()
+    wfh_count = serializers.IntegerField()
+    on_time_count = serializers.IntegerField()
+    late_count = serializers.IntegerField()        
+
+
+
+class WorkinghoursfractionSerializer(serializers.ModelSerializer):
+    employee_name = serializers.CharField(source='employee.user.get_full_name', read_only=True)
+    today_total_hours = serializers.SerializerMethodField()  # new field
+
+    class Meta:
+        model = Attendance
+        fields = [
+            'id',
+            'employee_name',
+            'in_time',
+            'out_time',
+            'today_total_hours',  # include total hours in response
+        ]
+
+    def get_today_total_hours(self, obj):
+        if obj.in_time and obj.out_time:
+            delta = obj.out_time - obj.in_time
+            worked_hours = delta.total_seconds() / 3600  # convert seconds to hours
+            worked_hours_rounded = round(worked_hours, 2)
+            # return as fraction of 9-hour day (adjust as needed)
+            return f"{worked_hours_rounded} / 9 hrs"
+        return "0.0 / 9 hrs"
+    
+    
+    
+class WeeklyWorkinghoursSerializer(serializers.ModelSerializer):
+    employee_name = serializers.CharField(source='employee.user.get_full_name', read_only=True)
+    weekly_total_hours = serializers.SerializerMethodField()
+
+    class Meta:
+        model = Attendance
+        fields = [
+            'employee_name',
+            'weekly_total_hours',
+        ]
+
+    def get_weekly_total_hours(self, obj):
+        # 'obj' will be Attendance instance but we'll use context to pass total
+        total_seconds = getattr(obj, 'weekly_seconds', 0)
+        worked_hours = total_seconds / 3600
+        worked_hours_rounded = round(worked_hours, 2)
+        return f"{worked_hours_rounded} / 45 hrs"  # Assuming 9hrs/day * 5days

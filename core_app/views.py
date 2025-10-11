@@ -25,6 +25,7 @@ import qrcode
 from django.db.models import Min, Max
 from web_app.serializers import *
 import io
+import numpy as np
 import base64
 from django.http import JsonResponse
 from django.utils.crypto import get_random_string
@@ -293,7 +294,7 @@ class VerifyOTPView(APIView):
             user=user,
             otp_hash=otp_hash,
             is_used=False,
-            purpose="reset_password",
+            purpose__in=["reset_password", "resend-otp"],
             expires_at__gte=timezone.now()
         ).last()
 
@@ -301,7 +302,7 @@ class VerifyOTPView(APIView):
             return Response({"success": False, "error": "OTP invalid or expired"}, status=400)
 
         otp_record.is_used = True
-        otp_record.is_verified = True  # ✅ mark verified
+        otp_record.is_verified = True  
         otp_record.save()
 
         return Response({"success": True, "message": "OTP verified successfully"}, status=200)
@@ -854,7 +855,7 @@ class FaceVerifyView(APIView):
             return Response({"success": False, "error": "No face detected in uploaded image"}, status=400)
 
         # Compare faces using cosine similarity
-        match, confidence = compare_faces(employee.face_encoding, uploaded_embedding, threshold=0.7)
+        match, confidence = compare_faces(employee.face_encoding, uploaded_embedding, threshold=0.8)
 
         if not match:
             return Response({
@@ -924,7 +925,7 @@ class FaceVerifyView(APIView):
             attendance_type="WFH",
             status=status_value,
             location=f"{latitude},{longitude}",
-            selfie=image_file,
+            in_selfie=image_file,
             verified_by=user,
             punch_in=True
         )
@@ -1070,6 +1071,97 @@ class FaceVerifyView(APIView):
 # face log out api - punch out
 class FaceLogoutView(APIView):
     permission_classes = [AllowAny]
+    def post(self, request):
+        user_id = request.data.get("user_id")
+        image_file = request.FILES.get("image")
+        latitude = request.data.get("latitude")
+        longitude = request.data.get("longitude")
+
+        if not user_id or not image_file:
+            return Response({"success": False, "error": "user_id and image are required"}, status=400)
+
+        employee = get_object_or_404(EmployeeDetail, user__id=user_id)
+
+        # ------------------------------
+        # 1️⃣ Ensure employee face encoding exists
+        # ------------------------------
+        if not employee.face_encoding:
+            if not employee.profile_pic:
+                return Response({"success": False, "error": "No profile picture found"}, status=404)
+            
+            profile_embedding = generate_face_embedding(employee.profile_pic.path)
+            if not profile_embedding:
+                return Response({"success": False, "error": "No face detected in profile picture"}, status=400)
+            
+            employee.face_encoding = profile_embedding
+            employee.save()
+
+        # ------------------------------
+        # 2️⃣ Generate embedding from uploaded logout selfie
+        # ------------------------------
+        with tempfile.NamedTemporaryFile(delete=False, suffix=".jpg") as tmp_file:
+            for chunk in image_file.chunks():
+                tmp_file.write(chunk)
+            uploaded_path = tmp_file.name
+
+        uploaded_embedding = generate_face_embedding(uploaded_path)
+        os.remove(uploaded_path)
+
+        if not uploaded_embedding:
+            return Response({"success": False, "error": "No face detected in uploaded image"}, status=400)
+
+        # Convert stored encoding to numpy arrays
+        stored_encoding = np.array(employee.face_encoding)
+        uploaded_encoding = np.array(uploaded_embedding)
+
+        # ------------------------------
+        # 3️⃣ Compare embeddings — stricter threshold
+        # ------------------------------
+        match, confidence = compare_faces(stored_encoding, uploaded_encoding, threshold=0.8)
+
+        if not match:
+            return Response({
+                "success": False,
+                "error": "Face does not match. Logout verification failed.",
+                "confidence": confidence
+            }, status=401)
+
+        # ------------------------------
+        # 4️⃣ Find today's active attendance record
+        # ------------------------------
+        attendance = Attendance.objects.filter(
+            employee=employee,
+            date=timezone.localdate(),
+            out_time__isnull=True
+        ).last()
+
+        if not attendance:
+            return Response({"success": False, "error": "No active attendance record found."}, status=404)
+
+        # ------------------------------
+        # 5️⃣ Update attendance with logout info
+        # ------------------------------
+        attendance.out_time = timezone.now()
+        attendance.out_selfie = image_file  # ✅ store logout selfie separately
+        attendance.location = f"{latitude},{longitude}" if latitude and longitude else attendance.location
+        attendance.save()
+
+        # ------------------------------
+        # 6️⃣ Return successful response
+        # ------------------------------
+        return Response({
+            "success": True,
+            "message": "Face matched and logout recorded",
+            "confidence": confidence,
+            "attendance": {
+                "date": attendance.date.strftime("%Y-%m-%d"),
+                "in_time": attendance.in_time.astimezone().strftime("%H:%M:%S"),
+                "out_time": attendance.out_time.astimezone().strftime("%H:%M:%S"),
+                "location": f"{latitude},{longitude}",
+                "employee": EmployeeSerializer(employee).data
+            }
+        })
+
 
     # def post(self, request):
     #     user_id = request.data.get("user_id")
@@ -1141,93 +1233,7 @@ class FaceLogoutView(APIView):
     #             "employee": EmployeeSerializer(employee).data
     #         }
     #     })
-    def post(self, request):
-        user_id = request.data.get("user_id")
-        image_file = request.FILES.get("image")
-        latitude = request.data.get("latitude")
-        longitude = request.data.get("longitude")
-
-        if not user_id or not image_file:
-            return Response({"success": False, "error": "user_id and image are required"}, status=400)
-
-        employee = get_object_or_404(EmployeeDetail, user__id=user_id)
-
-        # ------------------------------
-        # 1️⃣ Ensure employee face encoding exists
-        # ------------------------------
-        if not employee.face_encoding:
-            if not employee.profile_pic:
-                return Response({"success": False, "error": "No profile picture found"}, status=404)
-            
-            profile_embedding = generate_face_embedding(employee.profile_pic.path)
-            if not profile_embedding:
-                return Response({"success": False, "error": "No face detected in profile picture"}, status=400)
-            
-            employee.face_encoding = profile_embedding
-            employee.save()
-
-        # ------------------------------
-        # 2️⃣ Generate embedding from uploaded logout selfie
-        # ------------------------------
-        with tempfile.NamedTemporaryFile(delete=False, suffix=".jpg") as tmp_file:
-            for chunk in image_file.chunks():
-                tmp_file.write(chunk)
-            uploaded_path = tmp_file.name
-
-        uploaded_embedding = generate_face_embedding(uploaded_path)
-        os.remove(uploaded_path)
-
-        if not uploaded_embedding:
-            return Response({"success": False, "error": "No face detected in uploaded image"}, status=400)
-
-        # ------------------------------
-        # 3️⃣ Compare embeddings
-        # ------------------------------
-        match, confidence = compare_faces(employee.face_encoding, uploaded_embedding, threshold=0.7)
-
-        if not match:
-            return Response({
-                "success": False,
-                "error": "Face does not match. Logout verification failed.",
-                "confidence": confidence
-            }, status=401)
-
-        # ------------------------------
-        # 4️⃣ Find today's active attendance record
-        # ------------------------------
-        attendance = Attendance.objects.filter(
-            employee=employee,
-            date=timezone.localdate(),
-            out_time__isnull=True
-        ).last()
-
-        if not attendance:
-            return Response({"success": False, "error": "No active attendance record found."}, status=404)
-
-        # ------------------------------
-        # 5️⃣ Update attendance with logout info
-        # ------------------------------
-        attendance.out_time = timezone.now()
-        attendance.selfie = image_file  # ✅ save logout selfie image
-        attendance.location = f"{latitude},{longitude}" if latitude and longitude else attendance.location
-        attendance.save()
-
-        # ------------------------------
-        # 6️⃣ Return successful response
-        # ------------------------------
-        return Response({
-            "success": True,
-            "message": "Face matched and logout recorded successfully.",
-            "confidence": confidence,
-            "attendance": {
-                "date": attendance.date.strftime("%Y-%m-%d"),
-                "in_time": attendance.in_time.astimezone().strftime("%H:%M:%S") if attendance.in_time else None,
-                "out_time": attendance.out_time.astimezone().strftime("%H:%M:%S"),
-                "location": attendance.location,
-                "employee": EmployeeSerializer(employee).data
-            }
-        }, status=200)
-
+    
 
 
 
@@ -1788,6 +1794,9 @@ class DashboardLeaveDetailsCountAPI(APIView):
     def get(self, request, *args, **kwargs):
         user = request.user
 
+        # ---------------------------
+        # 1️⃣ Get employee record
+        # ---------------------------
         try:
             employee = EmployeeDetail.objects.get(user=user)
         except EmployeeDetail.DoesNotExist:
@@ -1796,30 +1805,37 @@ class DashboardLeaveDetailsCountAPI(APIView):
                 "message": "Employee record not found for this user"
             }, status=404)
 
+        # ---------------------------
+        # 2️⃣ Date filters
+        # ---------------------------
         start_filter = request.query_params.get("start_date")
         end_filter = request.query_params.get("end_date")
 
-        leaves = Leave.objects.filter(employee=employee)
-
-        if start_filter and end_filter:
+        # Default: current month
+        today = date.today()
+        if not start_filter or not end_filter:
+            start_filter = today.replace(day=1)
+            next_month = (today.replace(day=28) + timedelta(days=4)).replace(day=1)
+            end_filter = next_month - timedelta(days=1)
+        else:
             try:
                 start_filter = datetime.strptime(start_filter, "%Y-%m-%d").date()
                 end_filter = datetime.strptime(end_filter, "%Y-%m-%d").date()
-                leaves = leaves.filter(
-                    start_date__gte=start_filter,
-                    end_date__lte=end_filter
-                )
             except ValueError:
                 return Response(
                     {"success": False, "message": "Invalid date format. Use YYYY-MM-DD."},
                     status=400
                 )
 
+        # ---------------------------
+        # 3️⃣ Helper functions
+        # ---------------------------
         company_holidays = set(
             Holiday.objects.filter(type="Company Holiday").values_list("date", flat=True)
         )
 
         def get_working_days(start_date, end_date):
+            """Count working days excluding Sundays and holidays."""
             count = 0
             current = start_date
             while current <= end_date:
@@ -1828,51 +1844,72 @@ class DashboardLeaveDetailsCountAPI(APIView):
                 current += timedelta(days=1)
             return count
 
-        def get_total_days_by_status(status_value):
-            total_days = 0
-            for leave in leaves.filter(status=status_value):
-                if leave.start_date and leave.end_date:
-                    total_days += get_working_days(leave.start_date, leave.end_date)
-            return total_days
+        # ---------------------------
+        # 4️⃣ Yearly total (Approved)
+        # ---------------------------
+        current_year = today.year
+        year_start = date(current_year, 1, 1)
+        year_end = date(current_year, 12, 31)
 
-        today = date.today()
-        total_leave_taken_year = get_total_days_by_status("Approved")
-        approved_days = get_total_days_by_status("Approved")
-        pending_days = get_total_days_by_status("Pending")
-        rejected_days = get_total_days_by_status("Rejected")
+        yearly_leaves = Leave.objects.filter(
+            employee=employee,
+            status="Approved",
+            start_date__lte=year_end,
+            end_date__gte=year_start
+        )
 
-        upcoming_days = sum(
+        total_leave_taken_year = 0
+        for leave in yearly_leaves:
+            total_leave_taken_year += get_working_days(leave.start_date, leave.end_date)
+
+        # ---------------------------
+        # 5️⃣ Monthly filtered leaves
+        # ---------------------------
+        monthly_leaves = Leave.objects.filter(
+            employee=employee,
+            start_date__lte=end_filter,
+            end_date__gte=start_filter
+        )
+
+        # Approved & Rejected → days count
+        approved_days = sum(
             get_working_days(l.start_date, l.end_date)
-            for l in leaves.filter(status="Approved", start_date__gt=today)
+            for l in monthly_leaves.filter(status="Approved")
             if l.start_date and l.end_date
         )
 
-        # ✅ Count of requests (not days)
-        approved_count = leaves.filter(status="Approved").count()
-        pending_count = leaves.filter(status="Pending").count()
-        rejected_count = leaves.filter(status="Rejected").count()
-        upcoming_count = leaves.filter(status="Approved", start_date__gt=today).count()
+        rejected_days = sum(
+            get_working_days(l.start_date, l.end_date)
+            for l in monthly_leaves.filter(status="Rejected")
+            if l.start_date and l.end_date
+        )
 
+        # Pending → count requests
+        pending_count = monthly_leaves.filter(status="Pending").count()
+
+        # ---------------------------
+        # 6️⃣ Response
+        # ---------------------------
         return Response({
             "success": True,
             "message": "Leave details count fetched successfully",
+
             "user_id": user.id,
             "employee_id": employee.id,
 
-            # 🧮 Days count (optional)
+            # 🧮 Yearly summary
             "total_leave_taken": total_leave_taken_year,
-            # "approved_leave_days": approved_days,
-            # "pending_leave_days": pending_days,
-            # "rejected_leave_days": rejected_days,
-            # "upcoming_leave_days": upcoming_days,
 
-            # 📋 Request count (preferred for dashboard)
-            "approved_requests": approved_count,
-            "pending_requests": pending_count,
-            "rejected_requests": rejected_count,
-            "upcoming_requests": upcoming_count,
-        })
+            # 📆 Monthly summary (based on filters)
+            "approved_request": approved_days,
+            "rejected_request": rejected_days,
+            "pending_request": pending_count,
 
+            # "filter_range": {
+            #     "start_date": start_filter,
+            #     "end_date": end_filter
+            # }
+        }, status=200)
     # def get(self, request, *args, **kwargs):
     #     user = request.user
 
@@ -2000,34 +2037,83 @@ class DashboardLeaveDetailsCountAPI(APIView):
   
 
 # login employees leave list
-class LeaveListView(ListAPIView):
-    serializer_class = LeaveSerializerview
+class LeaveListView(APIView):
     permission_classes = [IsAuthenticated]
 
-    def get_queryset(self):
-        return Leave.objects.filter(user=self.request.user).order_by('-start_date')
+    def get(self, request):
+        user = request.user
+        current_year = timezone.now().year
 
-    def list(self, request, *args, **kwargs):
-        queryset = self.get_queryset()
-        if not queryset.exists():
-            return Response(
-                {
-                    "success":False,
-                    "message": "No leave records found.",
-                    "data": []
-                },
-                status=status.HTTP_200_OK
-            )
-        
-        serializer = self.get_serializer(queryset, many=True)
-        return Response(
-            {
-                "success" : True,
-                "message": "Leave records fetched successfully.",
-                "data": serializer.data
-            },
-            status=status.HTTP_200_OK
+        # Fetch leaves for current year
+        leaves = Leave.objects.filter(
+            user=user,
+            start_date__year=current_year
+        ).order_by('-start_date')
+
+        # If no leaves
+        if not leaves.exists():
+            return Response({
+                "success": False,
+                "message": "No leave records found.",
+                "data": [],
+                "summary": {
+                    "total_leave_taken_year": 0,
+                    "approved_days": 0,
+                    "rejected_days": 0,
+                    "pending_requests": 0,
+                }
+            }, status=status.HTTP_200_OK)
+
+        # --------------------------
+        # 🧮 Helper: Working Days Counter
+        # --------------------------
+        company_holidays = set(
+            Holiday.objects.filter(type="Company Holiday").values_list("date", flat=True)
         )
+
+        def get_working_days(start_date, end_date):
+            """Count only weekdays excluding Sundays and holidays."""
+            count = 0
+            current = start_date
+            while current <= end_date:
+                if current.weekday() != 6 and current not in company_holidays:
+                    count += 1
+                current += timedelta(days=1)
+            return count
+
+        # --------------------------
+        # 🔢 Summary Calculations
+        # --------------------------
+        approved_days = 0
+        rejected_days = 0
+        pending_requests = 0
+
+        for leave in leaves:
+            if leave.status == "Approved":
+                approved_days += get_working_days(leave.start_date, leave.end_date)
+            elif leave.status == "Rejected":
+                rejected_days += get_working_days(leave.start_date, leave.end_date)
+            elif leave.status == "Pending":
+                pending_requests += 1
+
+        total_leave_taken_year = approved_days
+
+        # --------------------------
+        # 📋 Response
+        # --------------------------
+        serializer = LeaveSerializerview(leaves, many=True)
+        return Response({
+            "success": True,
+            "message": "Leave records fetched successfully.",
+            "data": serializer.data,
+            "summary": {
+                "total_leave_taken_year": total_leave_taken_year,
+                "approved_days": approved_days,
+                "rejected_days": rejected_days,
+                "pending_requests": pending_requests
+            }
+        }, status=status.HTTP_200_OK)
+
 
 #   login mployees daily tasks api       
 class EmployeeTasksWithProjectAPI(ListAPIView):
@@ -2348,13 +2434,44 @@ class NotificationStatusView(APIView):
 
     def get(self, request):
         user = request.user
-        notifications = NotificationLog.objects.filter(user=user,is_active=True).order_by('-timestamp')
-        serializer = NotificationSerializer(notifications, many=True)
+        today = timezone.localdate()
+        yesterday = today - timedelta(days=1)
+
+        # All notifications (latest first)
+        notifications = NotificationLog.objects.filter(user=user).order_by('-timestamp')
+
+        # Group by date
+        today_qs = notifications.filter(timestamp__date=today)
+        yesterday_qs = notifications.filter(timestamp__date=yesterday)
+        older_qs = notifications.exclude(timestamp__date__in=[today, yesterday])
+
+        # Serialize each group
+        today_data = NotificationSerializer(today_qs, many=True).data
+        yesterday_data = NotificationSerializer(yesterday_qs, many=True).data
+
+        # Group older by date (each day as heading)
+        older_grouped = {}
+        for notif in older_qs:
+            date_str = notif.timestamp.date().strftime("%Y-%m-%d")
+            if date_str not in older_grouped:
+                older_grouped[date_str] = []
+            older_grouped[date_str].append(NotificationSerializer(notif).data)
+
+        # Sort older dates descending
+        older_sorted = dict(sorted(older_grouped.items(), reverse=True))
+
+        # Always include all sections, even if empty
+        data = {
+            "Today": today_data if today_data else [],
+            "Yesterday": yesterday_data if yesterday_data else [],
+            "Older": older_sorted if older_sorted else {}
+        }
+
         return Response({
             "success": True,
             "message": "Notifications fetched successfully",
-            "data": serializer.data
-        }) 
+            "data": data
+        })
     
 
  # delete employee notification api

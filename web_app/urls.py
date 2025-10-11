@@ -2,8 +2,7 @@ from django.urls import path
 from .views import *
 
 urlpatterns = [
-    
-path('adminprofile/', AdminProfileView.as_view(), name='admin-profile'),
+   
 path('all-employee-list/',EmployeeListAPI.as_view(),name='all-employee-list'),
 path('pending-approval-count/',DashboardPendingApprovalsCountView.as_view(),name='pending-approval-count'),
 path('taskpercentage/', TaskPercentageAPIView.as_view(), name='task-percentage'),
@@ -81,5 +80,6 @@ path('create-list-branch/', BranchCreateListView.as_view(), name='create-list-br
 
 path("employeesactivity/", EmployeeActivityListAPIView.as_view(), name="employeeActivity-list"),
 path('last-7-days-employee-activity/', Last7DaysActivityListAPIView.as_view(), name='last-7-days-employee-activity'),
+path('employee-work-hour-summary/<int:employee_id>/', EmployeeWorkHourSummaryAPI.as_view(), name='employee-work-hour-summary'),
 
 ]

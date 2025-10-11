@@ -200,7 +200,8 @@ class Attendance(models.Model):
     location = models.CharField(max_length=255, blank=True, null=True)
     qr_scan = models.BooleanField(default=False)
     qrsession = models.ForeignKey("QR_Session", on_delete=models.SET_NULL, null=True, blank=True)  # ✅ fixed
-    selfie = models.ImageField(upload_to="attendance_selfies/", blank=True, null=True)
+    in_selfie = models.ImageField(upload_to="attendance_selfies/in", blank=True, null=True)
+    out_selfie = models.ImageField(upload_to="attendance_selfies/out/", blank=True, null=True) # ✅ punch-out selfie
     status = models.CharField(max_length=20)  # Present / Absent
     verified_by = models.ForeignKey(User, on_delete=models.SET_NULL, null=True, related_name="verified_attendance")
     created_at = models.DateTimeField(auto_now_add=True)

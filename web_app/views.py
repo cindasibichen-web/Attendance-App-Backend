@@ -51,26 +51,91 @@ class AdminProfileView(RetrieveAPIView):
     def get(self, request, *args, **kwargs):
         user = request.user
 
-        # Optional: Only allow admin roles
-        if user.role != 'admin' and user.role != 'superadmin':
+        # Check role
+        if user.role not in ['admin', 'superadmin']:
             return Response(
                 {
-                    "success": "False",
+                    "success": False,
                     "message": "Access denied. Only admins can access this profile.",
                     "data": {}
                 },
                 status=status.HTTP_403_FORBIDDEN
             )
 
-        serializer = self.get_serializer(user)
+        # Get employee profile (related to User)
+        try:
+            employee = user.employee_profile
+        except EmployeeDetail.DoesNotExist:
+            return Response(
+                {
+                    "success": False,
+                    "message": "Employee profile not found for this admin.",
+                    "data": {}
+                },
+                status=status.HTTP_404_NOT_FOUND
+            )
+
+        serializer = self.get_serializer(employee)
         return Response(
             {
-                "success": "True",
+                "success": True,
                 "message": "Admin profile fetched successfully.",
                 "data": serializer.data
             },
             status=status.HTTP_200_OK
         )
+
+# edit admin profile api
+class AdminEditProfile(APIView):
+    permission_classes = [IsAuthenticated]
+
+    def patch(self, request, *args, **kwargs):
+        user = request.user
+
+        # Allow only admin/superadmin
+        if user.role not in ["admin", "superadmin"]:
+            return Response(
+                {
+                    "success": False,
+                    "message": "Access denied. Only admins can edit this profile.",
+                },
+                status=status.HTTP_403_FORBIDDEN
+            )
+
+        try:
+            employee = user.employee_profile
+        except EmployeeDetail.DoesNotExist:
+            return Response(
+                {
+                    "success": False,
+                    "message": "Employee profile not found.",
+                },
+                status=status.HTTP_404_NOT_FOUND
+            )
+
+        serializer = AdminProfileSerializerView(employee, data=request.data, partial=True)
+
+        if serializer.is_valid():
+            serializer.save()
+            return Response(
+                {
+                    "success": True,
+                    "message": "Profile edited successfully.",
+                    "data": serializer.data
+                },
+                status=status.HTTP_200_OK
+            )
+
+        return Response(
+            {
+                "success": False,
+                "message": "Profile update failed.",
+                "errors": serializer.errors
+            },
+            status=status.HTTP_400_BAD_REQUEST
+        )
+
+
 
 # get count of total pending project approvals and also total pending leave approvals
 class DashboardPendingApprovalsCountView(APIView):
@@ -2219,3 +2284,94 @@ class Last7DaysActivityListAPIView(APIView):
             "count": len(activities),
             "activities": activities
         })
+    
+
+# employee work hour summary api
+class EmployeeWorkHourSummaryAPI(APIView):
+    permission_classes = [IsAuthenticated]
+
+    def get(self, request, employee_id):
+        try:
+            employee = EmployeeDetail.objects.get(user__id=employee_id)
+        except EmployeeDetail.DoesNotExist:
+            return Response({
+                "success": False,
+                "message": "Employee not found."
+            }, status=status.HTTP_404_NOT_FOUND)
+
+        # ------------------------------
+        # 🧮 Helper Function
+        # ------------------------------
+        def calculate_work_hours_per_day(records):
+            """
+            For each date, get the earliest in_time and latest out_time,
+            then sum total worked hours.
+            """
+            total_hours = 0
+            overtime_hours = 0
+
+            grouped = (
+                records.values("date")
+                .annotate(first_in=Min("in_time"), last_out=Max("out_time"))
+                .order_by("date")
+            )
+
+            for entry in grouped:
+                in_time = entry["first_in"]
+                out_time = entry["last_out"]
+                if in_time and out_time:
+                    diff = (out_time - in_time).total_seconds() / 3600
+                    total_hours += diff
+                    if diff > 8:
+                        overtime_hours += (diff - 8)
+            return round(total_hours, 2), round(overtime_hours, 2)
+
+        # ------------------------------
+        # 📆 Date Ranges
+        # ------------------------------
+        today = timezone.localdate()
+        start_of_week = today - timedelta(days=today.weekday())  # Monday
+        start_of_month = today.replace(day=1)
+
+        # ------------------------------
+        # 📊 Fetch Attendance Records
+        # ------------------------------
+        today_records = Attendance.objects.filter(employee=employee, date=today)
+        week_records = Attendance.objects.filter(employee=employee, date__gte=start_of_week, date__lte=today)
+        month_records = Attendance.objects.filter(employee=employee, date__gte=start_of_month, date__lte=today)
+
+        # ------------------------------
+        # ⏱ Calculate Hours
+        # ------------------------------
+        total_hours_today, overtime_today = calculate_work_hours_per_day(today_records)
+        total_hours_week, overtime_week = calculate_work_hours_per_day(week_records)
+        total_hours_month, overtime_month = calculate_work_hours_per_day(month_records)
+
+        # Expected hours = 8 * number of working days
+        expected_today = 8
+        expected_week = week_records.values("date").distinct().count() * 8
+        expected_month = month_records.values("date").distinct().count() * 8
+
+        # ------------------------------
+        # 📋 Response
+        # ------------------------------
+        return Response({
+            "success": True,
+            "message": "Work hour summary fetched successfully.",
+            "employee_id": employee.id,
+            "employee_name": employee.user.first_name if employee.user else None,
+            "summary": {
+                "today": f"{total_hours_today}/{expected_today} hrs",
+                "week": f"{total_hours_week}/{expected_week} hrs",
+                "month": f"{total_hours_month}/{expected_month} hrs",
+                "overtime_month": f"{overtime_month} hrs"
+            },
+            "raw_data": {
+                "total_hours_today": total_hours_today,
+                "total_hours_week": total_hours_week,
+                "total_hours_month": total_hours_month,
+                "overtime_today": overtime_today,
+                "overtime_week": overtime_week,
+                "overtime_month": overtime_month
+            }
+        }, status=status.HTTP_200_OK)
