@@ -1,0 +1,17 @@
+.venv
+a_venv
+.env
+*.pyc
+**/__pycache__/
+generate_keys.py
+private.pem
+public.pem
+decrypt_aes.py
+decrypt_data.py
+*.dll
+*.lib
+*.pyd
+*.onnx
+*.pt
+*.h5
+.venv310
