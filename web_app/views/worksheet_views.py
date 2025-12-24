@@ -378,4 +378,21 @@ class ShiftaddonEditDelete(APIView):
         shift_addon.delete()
         return Response({"success": True, "message": "Shift add-on deleted successfully"}, status=status.HTTP_200_OK)
 
+# delete shift api 
+class ShiftDeleteAPIView(APIView):
+    def delete(self, request, id):
+        try:
+            shift = ShiftTable.objects.get(id=id)
+            shift.delete()
+            return Response(
+                {"message": "Shift deleted successfully"},
+                status=status.HTTP_200_OK
+            )
+        except ShiftTable.DoesNotExist:
+            return Response(
+                {"error": "Shift not found"},
+                status=status.HTTP_404_NOT_FOUND
+            )
+
+
 

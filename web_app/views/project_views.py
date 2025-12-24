@@ -992,31 +992,52 @@ class ProjectManagerSearchView(APIView):
     permission_classes = [IsAuthenticated]
 
     def get(self, request):
-        # Get the search text (letter or partial name)
         search_text = request.query_params.get("letter", "").strip().lower()
 
-        # Base queryset: only Project Managers
-        managers = EmployeeDetail.objects.filter(
-            Q(designation__iexact="Project Manager") |
-            Q(user_type__iexact="Project Manager")
-        )
+        # ❌ DO NOT FILTER encrypted fields in ORM
+        # Just reduce dataset safely (active users only)
+        employees = EmployeeDetail.objects.filter(user__is_active=True)
 
-        # Decrypt and filter manually
         filtered_managers = []
-        for manager in managers:
-            first_name = decrypt_value(manager.first_name) if manager.first_name else ""
-            last_name = decrypt_value(manager.last_name) if manager.last_name else ""
 
-            # Match search text (case-insensitive, partial or start)
-            if not search_text or search_text in first_name.lower() or search_text in last_name.lower():
-                manager.first_name = first_name
-                manager.last_name = last_name
-                filtered_managers.append(manager)
+        for emp in employees:
+            # 🔓 Decrypt fields safely
+            designation = decrypt_value(emp.designation) if emp.designation else ""
+            user_type = decrypt_value(emp.user_type) if emp.user_type else ""
+            reporting_manager = decrypt_value(emp.reporting_manager) if emp.reporting_manager else ""
 
-        # Sort alphabetically by decrypted first name
-        filtered_managers.sort(key=lambda m: m.first_name.lower())
+            first_name = decrypt_value(emp.first_name) if emp.first_name else ""
+            last_name = decrypt_value(emp.last_name) if emp.last_name else ""
+
+            # ✅ Project Manager condition (after decrypt)
+            is_pm = (
+                designation.lower() == "project manager"
+                or user_type.lower() == "project manager"
+                or reporting_manager.lower() in ["mgr1", "mgr2"]
+            )
+
+            if not is_pm:
+                continue
+
+            # 🔍 Name search condition
+            if search_text:
+                if (
+                    search_text not in first_name.lower()
+                    and search_text not in last_name.lower()
+                ):
+                    continue
+
+            # Attach decrypted names for serializer
+            emp.first_name = first_name
+            emp.last_name = last_name
+
+            filtered_managers.append(emp)
+
+        # 🔠 Sort alphabetically by decrypted first name
+        filtered_managers.sort(key=lambda x: x.first_name.lower())
 
         serializer = ProjectManagerSearchListSerializer(filtered_managers, many=True)
+
         return Response(
             {
                 "success": True,
@@ -1027,6 +1048,7 @@ class ProjectManagerSearchView(APIView):
             status=status.HTTP_200_OK
         )
 
+
 # team leader search
 class TeamLeaderSearchListAPIView(APIView):
     permission_classes = [IsAuthenticated]
@@ -1034,47 +1056,72 @@ class TeamLeaderSearchListAPIView(APIView):
     def get(self, request, *args, **kwargs):
         """
         API to list team leaders filtered by first or last name starting with a given letter.
-        You can use either:
+        Supports:
             /api/team-leaders-search/A/
-        or
             /api/team-leaders-search/?letter=A
         """
-        # Get the search letter (case-insensitive)
-        letter = kwargs.get("letter") or request.GET.get("letter", "")
-        letter = letter.strip().upper()
 
-        # Get all potential team leaders
-        queryset = EmployeeDetail.objects.filter(
-            Q(user_type__iexact="Team Leader") |
-            Q(designation__iexact="Team Leader") |
-            Q(is_team_lead=True)
+        # Get the search letter
+        letter = kwargs.get("letter") or request.GET.get("letter", "")
+        letter = letter.strip().lower()
+
+        # ❌ DO NOT filter encrypted fields here
+        # Only reduce dataset safely
+        employees = EmployeeDetail.objects.filter(
+            user__is_active=True
         ).select_related("user")
 
         filtered = []
-        for emp in queryset:
-            try:
-                first_name = decrypt_value(emp.first_name) if emp.first_name else ""
-                last_name = decrypt_value(emp.last_name) if emp.last_name else ""
-            except Exception:
-                first_name, last_name = "", ""
 
-            # Case-insensitive name filter
-            if not letter or first_name.upper().startswith(letter) or last_name.upper().startswith(letter):
-                emp.decrypted_first_name = first_name
-                emp.decrypted_last_name = last_name
-                filtered.append(emp)
+        for emp in employees:
+            # 🔓 Decrypt safely
+            designation = decrypt_value(emp.designation) if emp.designation else ""
+            user_type = decrypt_value(emp.user_type) if emp.user_type else ""
+            reporting_manager = decrypt_value(emp.reporting_manager) if emp.reporting_manager else ""
 
-        # Sort alphabetically by decrypted first name (case-insensitive)
+            first_name = decrypt_value(emp.first_name) if emp.first_name else ""
+            last_name = decrypt_value(emp.last_name) if emp.last_name else ""
+
+            # ✅ Team Leader condition (after decryption)
+            is_team_leader = (
+                emp.is_team_lead is True or
+                designation.lower() == "team leader" or
+                user_type.lower() == "team leader" or
+                reporting_manager.lower() in ["team leader 1", "team leader 2"]
+            )
+
+            if not is_team_leader:
+                continue
+
+            # 🔍 Name starts-with filter
+            if letter:
+                if (
+                    not first_name.lower().startswith(letter)
+                    and not last_name.lower().startswith(letter)
+                ):
+                    continue
+
+            # Attach decrypted values for serializer
+            emp.decrypted_first_name = first_name
+            emp.decrypted_last_name = last_name
+
+            filtered.append(emp)
+
+        # 🔠 Sort by decrypted first name
         filtered.sort(key=lambda x: x.decrypted_first_name.lower())
 
-        serializer = TeamLeaderSearchSerializer(filtered, many=True, context={"request": request})
+        serializer = TeamLeaderSearchSerializer(
+            filtered, many=True, context={"request": request}
+        )
 
-        return Response({
-            "message": "Team Leader list fetched successfully",
-            "count": len(filtered),
-            "team_leaders": serializer.data
-        }, status=status.HTTP_200_OK)
-
+        return Response(
+            {
+                "message": "Team Leader list fetched successfully",
+                "count": len(filtered),
+                "team_leaders": serializer.data,
+            },
+            status=status.HTTP_200_OK
+        )
 # employee search by name 
 class EmployeeRoleSearchByNameAPIView(APIView):
     permission_classes = [IsAuthenticated]
@@ -1108,6 +1155,7 @@ class EmployeeRoleSearchByNameAPIView(APIView):
             "employees": serializer.data
         }, status=status.HTTP_200_OK)
 
+
 class CeocmoSearchListAPIView(APIView):
     permission_classes = [IsAuthenticated]
 
@@ -1115,35 +1163,63 @@ class CeocmoSearchListAPIView(APIView):
         """
         API to list CEO, CTO, CMO, or CHO employees,
         optionally filtered by first or last name starting with a given letter.
-        
+
         Examples:
             /api/ceocmo-search/A/
             /api/ceocmo-search/?letter=A
         """
-        # Get letter from URL kwarg or query param
-        letter = kwargs.get("letter") or request.GET.get("letter")
 
-        # Base queryset for CEO/CTO/CMO/CHO (case-insensitive)
-        queryset = EmployeeDetail.objects.filter(
-            Q(user_type__iregex=r'^(ceo|cto|cmo|cho)$')| Q(designation__iregex=r'^(ceo|cto|cmo|cho)$')
-        )
+        # Get search letter
+        letter = kwargs.get("letter") or request.GET.get("letter", "")
+        letter = letter.strip().lower()
 
-        # Optional filtering by first or last name
-        if letter:
-            queryset = queryset.filter(
-                Q(first_name__istartswith=letter) | Q(last_name__istartswith=letter)
-            )
+        # ❌ Do NOT filter encrypted fields in ORM
+        employees = EmployeeDetail.objects.filter(
+            user__is_active=True
+        ).select_related("user")
 
-        queryset = queryset.order_by("first_name")
+        filtered = []
 
-        serializer = CeoctoSearchSerializer(queryset, many=True)
+        for emp in employees:
+       
+            designation = decrypt_value(emp.designation) if emp.designation else ""
+            user_type = decrypt_value(emp.user_type) if emp.user_type else ""
+
+            first_name = decrypt_value(emp.first_name) if emp.first_name else ""
+            last_name = decrypt_value(emp.last_name) if emp.last_name else ""
+
+           
+            is_c_level = designation.lower() in ["ceo", "cto", "cmo", "cho"] or \
+                         user_type.lower() in ["ceo", "cto", "cmo", "cho"]
+
+            if not is_c_level:
+                continue
+
+         
+            if letter:
+                if (
+                    not first_name.lower().startswith(letter)
+                    and not last_name.lower().startswith(letter)
+                ):
+                    continue
+
+            # Attach decrypted values for serializer
+            emp.decrypted_first_name = first_name
+            emp.decrypted_last_name = last_name
+
+            filtered.append(emp)
+
+        filtered.sort(key=lambda x: x.decrypted_first_name.lower())
+
+        serializer = CeoctoSearchSerializer(filtered, many=True)
 
         return Response({
             "success": True,
             "message": "C-level employees fetched successfully",
-            "count": queryset.count(),
+            "count": len(filtered),
             "executives": serializer.data
         }, status=status.HTTP_200_OK)
+    
 
 
 
@@ -1152,10 +1228,10 @@ class NewListProjectsApi(APIView):
     permission_classes = [IsAuthenticated]
 
     def get(self, request, *args, **kwargs):
-        # projects = Project.objects.filter(status__iexact="Pending").order_by("-created_at")
+      
         projects = Project.objects.all().order_by("-created_at")
 
-        # decrypt status and filter manually
+       
         decrypted_projects = []
         for project in projects:
             decrypted_status = decrypt_value(project.status)

@@ -70,7 +70,7 @@ class EmployeeTasksWithProjectAPI(ListAPIView):
                 },
                 status=status.HTTP_200_OK
             )
-            response.encrypt_payload = True       # 🔥 ONLY LOGIN RESPONSE WILL BE ENCRYPTED
+            response.encrypt_payload = True    
             return response
         
         serializer = self.get_serializer(queryset, many=True)
@@ -95,7 +95,7 @@ class EmployeeTasksWithProjectAPI(ListAPIView):
             },
             status=status.HTTP_200_OK
         )
-        response.encrypt_payload = True       # 🔥 ONLY LOGIN RESPONSE WILL BE ENCRYPTED
+        response.encrypt_payload = True      
         return response
 
 

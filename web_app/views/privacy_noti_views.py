@@ -132,6 +132,38 @@ class DesignationListView(APIView):
         })
 
 
+
+class DesignationListByDepartmentAPIView(APIView):
+    permission_classes = [IsAuthenticated]
+
+    def get(self, request, department_id):
+      
+
+    
+        designations = Designation.objects.filter(
+            department_id=department_id
+        )
+
+        data = []
+        for desig in designations:
+            title = decrypt_value(desig.title) if desig.title else ""
+            data.append({
+                "id": desig.id,
+                "designation_name": title
+            })
+
+        return Response(
+            {
+                "success": True,
+                "message": "Designations fetched successfully",
+                "count": len(data),
+                "designations": data
+            },
+            status=status.HTTP_200_OK
+        )
+
+
+
 # employee notification by employee id
 class NotificationLogByUserAPIView(generics.ListAPIView):
     serializer_class = NotificationLogSerializer
@@ -840,15 +872,15 @@ class WorkingHoursallempView(APIView):
         today = timezone.localdate()
         now = timezone.now()
 
-        # Option: include employee-level details if ?details=1 or ?details=true
+   
         details_flag = str(request.query_params.get("details", "")).lower() in ("1", "true", "yes")
 
-        # Date ranges
-        week_start = today - timedelta(days=today.weekday())   # Monday
-        month_start = today.replace(day=1)                     # 1st of the month
+      
+        week_start = today - timedelta(days=today.weekday())  
+        month_start = today.replace(day=1)                    
 
         # Overtime threshold (8.5 hours)
-        OVERTIME_LIMIT_SECONDS = 8.5 * 3600  # 30600 seconds
+        OVERTIME_LIMIT_SECONDS = 8.5 * 3600  
 
         # Totals
         daily_total_seconds = 0

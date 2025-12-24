@@ -206,16 +206,16 @@ class ProjectMembersListAPIView(APIView):
     permission_classes = [IsAuthenticated]
 
     def get(self, request, employee_id):
-        # ✅ Step 1: Get the corresponding user_id for this employee_id
+       
         employee = get_object_or_404(EmployeeDetail, id=employee_id)
         user_id = employee.user.id  # linked user id
 
-        # ✅ Step 2: Fetch all project members
+      
         members = ProjectMembers.objects.select_related('project').all()
 
         filtered_members = []
         for member in members:
-            # ✅ Step 3: Safely check across JSON fields
+           
             is_team_leader = (
                 isinstance(member.team_leader, dict)
                 and member.team_leader.get("id") == user_id
@@ -237,12 +237,11 @@ class ProjectMembersListAPIView(APIView):
 
         serializer = ProjectMemberslistSerializer(filtered_members, many=True)
 
-        # ✅ Step 4: Build detailed project-member response
+      
         formatted_data = []
         for item in serializer.data:
             project_members = []
 
-            # Collect all member roles
             team_leader = item.get("team_leader")
             if isinstance(team_leader, dict):
                 project_members.append(team_leader)
@@ -257,12 +256,12 @@ class ProjectMembersListAPIView(APIView):
                     [tag for tag in tags if isinstance(tag, dict)]
                 )
 
-            # ✅ Step 5: Remove duplicates based on 'id'
+         
             unique_members = {
                 m["id"]: m for m in project_members if isinstance(m, dict) and "id" in m
             }.values()
 
-            # ✅ Step 6: Enrich members with employee details
+         
             detailed_members = []
             for m in unique_members:
                 try:
@@ -279,7 +278,7 @@ class ProjectMembersListAPIView(APIView):
                         ),
                     })
                 except EmployeeDetail.DoesNotExist:
-                    # fallback if no employee record found
+              
                     detailed_members.append({
                         "id": m["id"],
                         "name": m.get("name"),
@@ -365,15 +364,15 @@ class TodayEmployeeCountByDesignation(APIView):
     def get(self, request):
         today = timezone.localdate()
 
-        # ✅ Get unique employees who punched in today
+     
         attendance_today = (
             Attendance.objects
             .filter(date=today, punch_in=True)
-            .values("employee__designation", "employee")  # include employee for uniqueness
-            .distinct()  # ensures unique employee per day
+            .values("employee__designation", "employee") 
+            .distinct()  
         )
 
-        # ✅ Count unique employees per designation
+       
         designation_counts = {}
         for entry in attendance_today:
             designation = entry["employee__designation"] or "Not Specified"
@@ -402,7 +401,7 @@ class EmployeeListAdminFilteredView(APIView):
 
         employees = EmployeeDetail.objects.all()
 
-        # ✅ Filtering
+ 
         if designation:
             employees = employees.filter(designation__iexact=designation)
        
@@ -499,7 +498,7 @@ class RemoveEmployeeAPIView(APIView):
             employee.user.is_active = False
             employee.user.save()
 
-            # 🔒 Blacklist all their tokens
+           
             try:
                 tokens = OutstandingToken.objects.filter(user=employee.user)
                 for token in tokens:
@@ -656,9 +655,8 @@ class InactiveEmployeeSearchAPIView(APIView):
             first_name = decrypt_value(emp.first_name).strip()
             last_name = decrypt_value(emp.last_name).strip()
 
-            # ✅ Compare both sides in lowercase for case-insensitive match
             if query in first_name.lower() or query in last_name.lower():
-                emp.first_name = first_name  # keep original case for response
+                emp.first_name = first_name
                 emp.last_name = last_name
                 matched.append(emp)
 
@@ -675,12 +673,7 @@ class InactiveEmployeeSearchAPIView(APIView):
 
     # search active employees
 class ActiveEmployeeSearchListAPIView(APIView):
-    """
-    API to list ACTIVE employees filtered by first or last name 
-    starting with a given letter.
 
-    Supports encrypted first_name and last_name fields.
-    """
     permission_classes = [IsAuthenticated]
 
     def get(self, request, *args, **kwargs):
@@ -702,7 +695,7 @@ class ActiveEmployeeSearchListAPIView(APIView):
                 emp.last_name = last_name
                 matched.append(emp)
 
-        # Sort by first_name alphabetically
+
         matched = sorted(matched, key=lambda x: x.first_name.lower())
 
         serializer = EmployeeActiveInactiveListSerializer(matched, many=True)
@@ -722,7 +715,6 @@ class EmployeeActivityListAPIView(APIView):
     def get(self, request):
         today = timezone.localdate()
 
-        # --- Latest leave record for each employee applied today ---
         latest_leave_today = Leave.objects.filter(
             employee=OuterRef('pk'),
             created_at__date=today
@@ -1124,7 +1116,7 @@ class EmployeeWorkHourSummaryAPI(APIView):
 
                 if in_time and out_time:
 
-                    # 🔥 Fix negative hours when shift crosses midnight
+              
                     if out_time < in_time:
                         out_time = out_time + timedelta(days=1)
 
@@ -1225,7 +1217,7 @@ class EmployeeDailyProductivity(APIView):
         if not last_out:
             last_out = now()
 
-        # 🔥 Handle overnight shift (punch-out after midnight)
+      
         if last_out < first_in:
             last_out = last_out + timedelta(days=1)
 

@@ -135,50 +135,126 @@ class AttendanceSummaryView(APIView):
 # todays attendance count  all employees
 class TodaysAttendanceCount(APIView):
     permission_classes = [IsAuthenticated]
-
     def get(self, request):
         today = timezone.localdate()
 
-        # Get each employee's first punch-in record for today
+        # -----------------------------
+        # Active employees
+        # -----------------------------
+        active_employees = EmployeeDetail.objects.filter(
+            user__is_active=True
+        ).values_list("id", flat=True)
+
+        total_employee_count = active_employees.count()
+
+        # -----------------------------
+        # Punch-in records (today)
+        # -----------------------------
         first_punches = (
             Attendance.objects.filter(date=today)
             .values("employee")
             .annotate(first_in=Min("in_time"))
         )
 
+        punched_employee_ids = set()
         present_count = 0
         late_count = 0
 
         for record in first_punches:
+            employee_id = record["employee"]
             first_in = record["first_in"]
-            if first_in:
-                # Convert to local time if timezone-aware
-                local_in_time = timezone.localtime(first_in)
-                punch_time = local_in_time.time()
 
-                # ✅ Compare correctly
-                if punch_time <= time(9, 40):
-                    present_count += 1
-                else:
-                    late_count += 1
+            if not first_in:
+                continue
 
-        # Leave count (unique employees on leave today)
-        leave_count = Leave.objects.filter(
-            start_date__lte=today,
-            end_date__gte=today,
-            status="Approved"
-        ).values("employee").distinct().count()
+            punched_employee_ids.add(employee_id)
 
-        total_employee_count = EmployeeDetail.objects.filter(user__is_active=True).count()
+            local_in_time = timezone.localtime(first_in)
+            punch_time = local_in_time.time()
+
+            if punch_time <= time(9, 40):
+                present_count += 1
+            else:
+                late_count += 1
+
+        # -----------------------------
+        # Approved leave employees (today)
+        # -----------------------------
+        approved_leave_employee_ids = set(
+            Leave.objects.filter(
+                start_date__lte=today,
+                end_date__gte=today,
+                status="Approved"
+            ).values_list("employee", flat=True)
+        )
+
+        # -----------------------------
+        # Employees who did NOT punch today
+        # -----------------------------
+        not_punched_employee_ids = set(active_employees) - punched_employee_ids
+
+        # -----------------------------
+        # Final leave count
+        # (Approved leave + Not punched)
+        # -----------------------------
+        leave_employee_ids = approved_leave_employee_ids.union(
+            not_punched_employee_ids
+        )
+
+        leave_count = len(leave_employee_ids)
 
         return Response({
             "success": True,
             "date": today,
-            "total_employee_count":total_employee_count,
+            "total_employee_count": total_employee_count,
             "present_count": present_count,
             "late_count": late_count,
             "leave_count": leave_count
         })
+
+    # def get(self, request):
+    #     today = timezone.localdate()
+
+    #     # Get each employee's first punch-in record for today
+    #     first_punches = (
+    #         Attendance.objects.filter(date=today)
+    #         .values("employee")
+    #         .annotate(first_in=Min("in_time"))
+    #     )
+
+    #     present_count = 0
+    #     late_count = 0
+
+    #     for record in first_punches:
+    #         first_in = record["first_in"]
+    #         if first_in:
+    #             # Convert to local time if timezone-aware
+    #             local_in_time = timezone.localtime(first_in)
+    #             punch_time = local_in_time.time()
+
+    #             # ✅ Compare correctly
+    #             if punch_time <= time(9, 40):
+    #                 present_count += 1
+    #             else:
+    #                 late_count += 1
+
+    #     # Leave count (unique employees on leave today)
+    #     leave_count = Leave.objects.filter(
+    #         start_date__lte=today,
+    #         end_date__gte=today,
+    #         status="Approved"
+    #     ).values("employee").distinct().count()
+
+    #     total_employee_count = EmployeeDetail.objects.filter(user__is_active=True).count()
+
+    #     return Response({
+    #         "success": True,
+    #         "date": today,
+    #         "total_employee_count":total_employee_count,
+    #         "present_count": present_count,
+    #         "late_count": late_count,
+    #         "leave_count": leave_count
+    #     })
 
 
 
@@ -806,7 +882,7 @@ class AdminPunchInAPIView(APIView):
             in_time=now_utc,
             attendance_type="office",
             location=f"{phone_lat},{phone_lon}",
-            qr_scan=False,                    # No QR here
+            qr_scan=False,                   
             qrsession=None,
             status=status_value,
             punch_in=True

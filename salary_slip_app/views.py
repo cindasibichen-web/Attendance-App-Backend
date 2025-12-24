@@ -244,3 +244,20 @@ class SalaryComponentUpdateAPIView(APIView):
             {"success": False, "errors": serializer.errors},
             status=status.HTTP_400_BAD_REQUEST,
         )      
+    
+
+      
+        
+class SalaryComponentDeleteView(APIView):
+
+    def delete(self, request, pk):
+        component = get_object_or_404(SalaryComponent, pk=pk)
+        component.delete()
+
+        return Response(
+            {
+                "success": True,
+                "message": "Salary component deleted successfully"
+            },
+            status=status.HTTP_200_OK
+        )    

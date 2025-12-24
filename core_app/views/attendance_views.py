@@ -252,15 +252,13 @@ class EmployeePresenceAbsenceLeaveCountView(APIView):
 
             current = start
             while current <= end:
-                # Exclude Sundays (weekday() == 6) and Company Holidays
+               
                 if current.weekday() != 6 and current not in company_holidays:
                     year, month = current.year, current.month
                     data[year][month]["leave_count"] += 1
                 current += timedelta(days=1)
 
-        # -----------------------------
-        # 4. Sort & format final data
-        # -----------------------------
+      
         now = timezone.localtime(timezone.now())
         current_year = now.year
         current_month = now.month
@@ -286,10 +284,7 @@ class EmployeePresenceAbsenceLeaveCountView(APIView):
 #login employees daily check in check out details 
 
 class EmployeeAllAttendanceDetailsView(APIView):
-    """
-    API to get logged-in employee's attendance details for all days.
-    Returns attendance grouped by date, with session details and daily summary.
-    """
+  
     permission_classes = [IsAuthenticated]
 
     def get(self, request):
@@ -303,7 +298,7 @@ class EmployeeAllAttendanceDetailsView(APIView):
                 "message": "Employee profile not found"
             }, status=404)
 
-        # Optionally, support date range filtering
+    
         start_date_str = request.query_params.get('start_date')
         end_date_str = request.query_params.get('end_date')
         attendance_qs = Attendance.objects.filter(employee=employee)
@@ -436,122 +431,6 @@ class EmployeeAllAttendanceDetailsView(APIView):
         return response
     
 
- # get details of first punch in and last punch out details by year , month and day wise of the login employee
-# class AttendanceReportView(APIView):
-#     """
-#     API to get logged-in employee's first punch-in and last punch-out details
-#     grouped by year, month, and day.
-#     """
-#     permission_classes = [IsAuthenticated]
-
-   
-
-#     def get(self, request):
-#         user = request.user
-
-#         try:
-#             employee = user.employee_profile
-#         except EmployeeDetail.DoesNotExist:
-#             return Response({
-#                 "success": False,
-#                 "message": "Employee profile not found"
-#             }, status=404)
-
-#         # Fetch all attendances and leaves for the employee
-#         attendance_qs = Attendance.objects.filter(employee=employee)
-#         leave_qs = Leave.objects.filter(employee=employee)
-
-#         if not attendance_qs.exists() and not leave_qs.exists():
-#             return Response({
-#                 "success": True,
-#                 "message": "No attendance or leave records found.",
-#                 "data": {}
-#             }, status=200)
-
-#         # Group attendances by date
-#         grouped_data = defaultdict(list)
-#         for att in attendance_qs:
-#             grouped_data[att.date].append(att)
-
-#         final_data = defaultdict(lambda: defaultdict(list))
-
-#         # Get all unique dates from attendance or leave
-#         all_dates = set(list(grouped_data.keys()) + list(leave_qs.values_list('requested_date', flat=True)))
-
-#         for date in sorted(all_dates):
-#             day_attendances = grouped_data.get(date, [])
-
-#             # First punch-in and last punch-out
-#             first_in = min([att.in_time for att in day_attendances if att.in_time], default=None)
-#             last_out = max([att.out_time for att in day_attendances if att.out_time], default=None)
-
-#             # Default status
-#             status = "absent"
-#             attendance_type = None
-#             location = None
-
-#             if day_attendances:
-#                 # Determine first attendance record (by in_time) to check punctuality
-#                 first_att = min(day_attendances, key=lambda x: x.in_time if x.in_time else timezone.datetime.max)
-#                 attendance_type = first_att.attendance_type
-#                 location = first_att.location
-
-#                 # If first punch-in exists, convert to local time and compare against threshold
-#                 if first_att.in_time:
-#                     # Convert to local timezone
-#                     local_first_in = timezone.localtime(first_att.in_time)
-#                     threshold = time(9, 40)
-#                     if local_first_in.time() <= threshold:
-#                         status = "present"
-#                     else:
-#                         status = "late"
-#                 else:
-#                     # No in_time in records → mark absent
-#                     status = "absent"
-
-#             # Check leave for this date
-#             leave = leave_qs.filter(
-#                 start_date__lte=date,
-#                 end_date__gte=date
-#             ).first()
-
-#             if leave:
-#                 leave_status = leave.status.lower()
-#                 if leave_status == "approved":
-#                     status = "leave"
-#                 elif leave_status == "rejected":
-#                     status = "absent"
-#                 elif leave_status == "not taken":
-#                     # Treat as working day — check punch-in time
-#                     if first_in:
-#                         local_first_in = timezone.localtime(first_in)
-#                         threshold = time(9, 40)
-#                         if local_first_in.time() <= threshold:
-#                             status = "present"
-#                         else:
-#                             status = "late"
-#                     else:
-#                         status = "absent"  # If no attendance record at all
-
-#             year = date.year
-#             month = date.month
-
-#             daily_summary = {
-#                 "date": date.strftime("%Y-%m-%d"),
-#                 "first_punch_in": first_in.astimezone().strftime("%H:%M:%S") if first_in else None,
-#                 "last_punch_out": last_out.astimezone().strftime("%H:%M:%S") if last_out else None,
-#                 "status": status,
-#                 "attendance_type": attendance_type,
-#                 "location": location
-#             }
-
-#             final_data[str(year)][str(month)].append(daily_summary)
-
-#         return Response({
-#             "success": True,
-#             "message": "First punch-in and last punch-out details with status retrieved successfully.",
-#             "data": final_data
-#         }, status=200)
 from django.utils import timezone
 from datetime import datetime, time, timedelta
 
@@ -591,7 +470,7 @@ class AttendanceReportView(APIView):
         final_data = defaultdict(lambda: defaultdict(list))
         all_dates = set(list(grouped_data.keys()) + list(leave_qs.values_list('requested_date', flat=True)))
 
-        # ✅ Create timezone-aware max datetime
+      
         aware_max_datetime = timezone.make_aware(datetime.max, timezone.get_current_timezone())
 
         for date in sorted(all_dates):
@@ -604,7 +483,7 @@ class AttendanceReportView(APIView):
             location = None
 
             if day_attendances:
-                # ✅ Use timezone-aware max datetime
+             
                 first_att = min(
                     day_attendances,
                     key=lambda x: x.in_time if x.in_time else aware_max_datetime

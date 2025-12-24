@@ -19,7 +19,7 @@ load_dotenv()
 # Build paths inside the project
 BASE_DIR = Path(__file__).resolve().parent.parent
 ENCRYPTION_KEY= os.getenv('FERNET_KEY')
-# ✅ Initialize global Fernet instance
+# Initialize global Fernet instance
 FERNET = Fernet(ENCRYPTION_KEY.encode())
 # SECURITY
 SECRET_KEY = os.getenv('SECRET_KEY', 'your-dev-secret-key')
@@ -27,8 +27,7 @@ DEBUG = os.getenv('DEBUG', 'True') == 'True'
 ALLOWED_HOSTS = [
     'localhost',
     '127.0.0.1',
-       # 👈 your system’s LAN IP
-    "192.168.1.12"
+    "192.168.1.5"
     
 ]
 

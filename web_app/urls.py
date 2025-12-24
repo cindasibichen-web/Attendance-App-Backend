@@ -22,7 +22,9 @@ path('edit-profile/',AdminEditProfile.as_view(),name='edit-profile'),
 path('create-shift/', ShiftCreateView.as_view(), name='create-shift'),
 path('list-shifts/',ShiftListView.as_view(),name='list-shifts'),
 path('update-shift/<int:pk>/', ShiftEditView.as_view(), name='update-shift'),
-path('delete-shift/<int:pk>/', ShiftDeleteView.as_view(), name='delete-shift'),
+# path('delete-shift/<int:pk>/', ShiftDeleteView.as_view(), name='delete-shift'),
+
+path('shift-delete/<int:id>/', ShiftDeleteAPIView.as_view(), name='shift-delete'),
    
 path('all-employee-list/',EmployeeListAPI.as_view(),name='all-employee-list'),
 path('pending-approval-count/',DashboardPendingApprovalsCountView.as_view(),name='pending-approval-count'),
@@ -96,6 +98,7 @@ path("ceo-cmo-search/", CeocmoSearchListAPIView.as_view(), name="ceo-cmo-search"
 path('list-departments/',DepartmentListView.as_view(),name='list-departments'),
 path('create-designation/', DesignationCreateView.as_view(), name='create-designation'),
 path('list-designations/',DesignationListView.as_view(),name='list-designations'),
+path('list-designation-by-department/<int:department_id>/',DesignationListByDepartmentAPIView.as_view(),name='list-designation-by-department'),
 path('notification-list-admin/',AdminNotificationListView.as_view(),name='notification-list-admin'),
 path('delete-notification-admin/<int:notification_id>/',AdminNotificationDeleteView.as_view(),name='delete-notification-admin'),
 path('notificationsuser/<int:user_id>/', NotificationLogByUserAPIView.as_view(), name='user-notifications'),

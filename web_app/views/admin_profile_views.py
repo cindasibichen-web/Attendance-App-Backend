@@ -199,7 +199,7 @@ class AdminNotificationDeleteView(APIView):
             )
         try:
             notification = NotificationLog.objects.get(id=notification_id, user=user)
-            # Soft-delete: mark notification as inactive instead of removing it
+   
             notification.is_active = False
             notification.save()
             return Response(
